@@ -1,3 +1,4 @@
 [submodule "cutlass"]
 	path = cutlass
 	url = git@github.com:NVIDIA/cutlass.git
+	ignore = dirty
