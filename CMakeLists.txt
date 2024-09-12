@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 project(mma_kernels LANGUAGES CXX CUDA)
 
 set(SOURCES 
-    src/main.cu)
+    src/cutlass_prototype/main.cu)
 
 set(CUTLASS_DIR "${CMAKE_SOURCE_DIR}/cutlass")
 set(CUDA_ARCHITECTURES 80)

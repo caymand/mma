@@ -1,0 +1,434 @@
+types {
+  
+}
+
+
+
+entry("main",
+      {A: [][]f16,
+       B: [][]f16},
+      {[][]f16})
+  entry_main (m_5544 : i64,
+              q_5545 : i64,
+              n_5546 : i64,
+              A_5547 : [m_5544][q_5545]f16,
+              B_5548 : [q_5545][n_5546]f16)
+  : {[m_5544][n_5546]f16#([3, 4], [0])} = {
+  let {comparatee_5821 : i64} =
+    mul_nw64(m_5544, n_5546)
+  let {suff_outer_par_5822 : bool} =
+    cmp_size(suff_outer_par_0, threshold(def, )) <= comparatee_5821
+  let {nest_size_5839 : i64} =
+    mul_nw64(q_5545, comparatee_5821)
+  let {segred_tblock_size_5840 : i64} =
+    get_size(segred_tblock_size_5777, thread_block_size)
+  let {num_tblocks_5841 : i64} =
+    calc_num_tblocks(nest_size_5839, segred_num_tblocks_5779, segred_tblock_size_5840)
+  let {Ty_5860 : i64} =
+    get_size(Ty_5858, tile_size)
+  let {Ry_5861 : i64} =
+    get_size(Ry_5859, reg_tile_size)
+  let {Tk_5862 : i64} =
+    get_size(Tk_5857, tile_size)
+  let {TxRx_5865 : i64} =
+    mul_nw64(Ty_5860, Ry_5861)
+  let {a_loc_sz_5868 : i64} =
+    mul_nw64(Tk_5862, TxRx_5865)
+  let {tblock_size_5874 : i64} =
+    mul_nw64(Ty_5860, Ty_5860)
+  let {loop_nonempty_6228 : bool} =
+    slt64(0i64, Ry_5861)
+  let {defunc_0_map_res_5823 : [m_5544][n_5546]f16} =
+    if <equiv> suff_outer_par_5822
+    then {
+      let {tk_div_tx_5863 : i64} =
+        sdiv_up64(Tk_5862, Ty_5860)
+      let {gridDim_x_5871 : i64} =
+        sdiv_up64(n_5546, TxRx_5865)
+      let {gridDim_y_5872 : i64} =
+        sdiv_up64(m_5544, TxRx_5865)
+      let {grid_size_5873 : i64} =
+        mul_nw64(gridDim_x_5871, gridDim_y_5872)
+      let {full_tiles_5905 : i64} =
+        squot64(q_5545, Tk_5862)
+      let {kk_6063 : i64} =
+        mul_nw64(Tk_5862, full_tiles_5905)
+-- Outer map over the blocks of the grid
+      let {defunc_0_map_res_5824 : [m_5544][n_5546]f16} =
+        segmap(block; ; grid=grid_size_5873; blocksize=tblock_size_5874)
+        (gid_y_5875 < gridDim_y_5872, gid_x_5876 < gridDim_x_5871) (~gid_flat_5877) : {f16} {
+          let {iii_5878 : i64} =
+            mul_nw64(TxRx_5865, gid_y_5875)
+          let {jjj_5879 : i64} =
+            mul_nw64(TxRx_5865, gid_x_5876)
+-- Zero Initialize the accum
+          let {cssss_5902 : [Ty_5860][Ty_5860][Ry_5861][Ry_5861]f16} =
+            segmap(inblock; full [])
+            (ltid_y_5892 < Ty_5860, ltid_x_5891 < Ty_5860) (~ltid_flat_5893) : {[Ry_5861][Ry_5861]f16} {
+              let {css_init_5894 : [Ry_5861][Ry_5861]f16} =
+                scratch(f16, Ry_5861, Ry_5861)
+              let {loop_5895 : [Ry_5861][Ry_5861]f16} =
+*               loop {merge_5897 : *[Ry_5861][Ry_5861]f16} = {css_init_5894}
+*               for i_5896:i64 < Ry_5861 do {
+                  let {loop_5898 : [Ry_5861][Ry_5861]f16} =
+*                   loop {merge_5900 : *[Ry_5861][Ry_5861]f16} = {merge_5897}
+*                   for i_5899:i64 < Ry_5861 do {
+                      let {css_5901 : [Ry_5861][Ry_5861]f16} =
+                        merge_5900 with [i_5896, i_5899] = 0.0f16
+                      in {css_5901}
+                    }
+                  in {loop_5898}
+                }
+              return {returns (private) loop_5895}
+            }
+-- zero initialize done    
+          let {A_loc_5903 : [a_loc_sz_5868]f16} =
+            scratch(f16, a_loc_sz_5868)
+          let {B_loc_5904 : [a_loc_sz_5868]f16} =
+            scratch(f16, a_loc_sz_5868)
+          let {loop_6060 : [Ty_5860][Ty_5860][Ry_5861][Ry_5861]f16,
+               loop_6061 : [a_loc_sz_5868]f16,
+               loop_6062 : [a_loc_sz_5868]f16} =
+-- Loop over tiles to copy from gA to sA and gB to sB              
+*           loop {merge_5907 : *[Ty_5860][Ty_5860][Ry_5861][Ry_5861]f16,
+*                 merge_5908 : *[a_loc_sz_5868]f16,
+*                 merge_5909 : *[a_loc_sz_5868]f16} = {cssss_5902, A_loc_5903, B_loc_5904}
+*           for i_5906:i64 < full_tiles_5905 do {
+              let {kk_5910 : i64} =
+                mul_nw64(Tk_5862, i_5906)
+              let {as_transformed_row_glb2loc_5951 : [a_loc_sz_5868]f16} =
+-- Map over the threads in the block
+                segmap(inblock; full [0, 1])
+                (ltid_seq_5933 < Ry_5861, ltid_seq_5934 < tk_div_tx_5863, ltid_y_5931 < Ty_5860, ltid_x_5932 < Ty_5860) (~ltid_flat_5930) : {[a_loc_sz_5868]f16} {
+                  let {binop_y_5935 : i64} =
+                    mul_nw64(Ty_5860, ltid_seq_5934)
+                  let {k_5936 : i64} =
+                    add_nw64(ltid_x_5932, binop_y_5935)
+                  let {binop_y_5937 : i64} =
+                    mul_nw64(Ty_5860, ltid_seq_5933)
+                  let {i_5938 : i64} =
+                    add_nw64(ltid_y_5931, binop_y_5937)
+                  let {gtid_5939 : i64} =
+                    add_nw64(iii_5878, i_5938)
+                  let {as_transformed_row_seqdim_idx_5940 : i64} =
+                    add_nw64(kk_5910, k_5936)
+                  let {cond_5941 : bool} =
+                    slt64(gtid_5939, m_5544)
+-- Bounds check for global memory load. In case out of bounds set 0.0f                  
+                  let {as_transformed_row_elem_5942 : f16} =
+                    if cond_5941
+                    then {
+                      let {A_elem_5944 : f16} =
+                        A_5547[gtid_5939, as_transformed_row_seqdim_idx_5940]
+                      in {A_elem_5944}
+                    } else {0.0f16}
+                    : {f16}
+                  let {cond_5946 : bool} =
+                    slt64(k_5936, Tk_5862)
+                  let {as_transformed_row_loc_ind_5947 : i64} =
+                    if cond_5946
+                    then {
+                      let {binop_y_5948 : i64} =
+                        mul_nw64(Tk_5862, i_5938)
+                      let {x_5949 : i64} =
+                        add_nw64(k_5936, binop_y_5948)
+                      in {x_5949}
+                    } else {-1i64}
+                    : {i64}
+                  return {merge_5908
+                          with ([as_transformed_row_loc_ind_5947] = as_transformed_row_elem_5942)}
+                }
+-- Map over all threads in block
+              let {as_transformed_row_glb2loc_5992 : [a_loc_sz_5868]f16} =
+                segmap(inblock; full [0, 1])
+                (ltid_seq_5974 < Ry_5861, ltid_seq_5975 < tk_div_tx_5863, ltid_y_5972 < Ty_5860, ltid_x_5973 < Ty_5860) (~ltid_flat_5971) : {[a_loc_sz_5868]f16} {
+                  let {binop_y_5976 : i64} =
+                    mul_nw64(Ty_5860, ltid_seq_5975)
+                  let {k_5977 : i64} =
+                    add_nw64(ltid_y_5972, binop_y_5976)
+                  let {binop_y_5978 : i64} =
+                    mul_nw64(Ty_5860, ltid_seq_5974)
+                  let {i_5979 : i64} =
+                    add_nw64(ltid_x_5973, binop_y_5978)
+                  let {gtid_5980 : i64} =
+                    add_nw64(jjj_5879, i_5979)
+                  let {as_transformed_row_seqdim_idx_5981 : i64} =
+                    add_nw64(kk_5910, k_5977)
+                  let {cond_5982 : bool} =
+                    slt64(gtid_5980, n_5546)
+-- Bounds check for conditional copy
+                  let {as_transformed_row_elem_5983 : f16} =
+                    if cond_5982
+                    then {
+                      let {A_elem_5985 : f16} =
+                        B_5548[as_transformed_row_seqdim_idx_5981, gtid_5980]
+                      in {A_elem_5985}
+                    } else {0.0f16}
+                    : {f16}
+                  let {cond_5987 : bool} =
+                    slt64(k_5977, Tk_5862)
+                  let {as_transformed_row_loc_ind_5988 : i64} =
+                    if cond_5987
+                    then {
+                      let {binop_y_5989 : i64} =
+                        mul_nw64(TxRx_5865, k_5977)
+                      let {x_5990 : i64} =
+                        add_nw64(i_5979, binop_y_5989)
+                      in {x_5990}
+                    } else {-1i64}
+                    : {i64}
+                  return {merge_5909
+                          with ([as_transformed_row_loc_ind_5988] = as_transformed_row_elem_5983)}
+                }
+-- Collective copy done.            
+              let {redomap_res_6059 : [Ty_5860][Ty_5860][Ry_5861][Ry_5861]f16} =
+-- Map over threads in the block
+                segmap(inblock; full [])
+                (ltid_y_6027 < Ty_5860, ltid_x_6026 < Ty_5860) (~ltid_flat_6028) : {[Ry_5861][Ry_5861]f16} {
+                  let {css_init_6029 : [Ry_5861][Ry_5861]f16} =
+                    merge_5907[ltid_y_6027, ltid_x_6026, 0i64 :+ Ry_5861 * 1i64, 0i64 :+ Ry_5861 * 1i64]
+                  let {binop_x_6041 : i64} =
+                    mul_nw64(Ry_5861, ltid_y_6027)
+                  let {binop_y_6046 : i64} =
+                    mul_nw64(Ry_5861, ltid_x_6026)
+                  let {loop_6030 : [Ry_5861][Ry_5861]f16} =
+*                   loop {merge_6032 : *[Ry_5861][Ry_5861]f16} = {css_init_6029}
+*                   for i_6031:i64 < Tk_5862 do {
+                      let {binop_y_6048 : i64} =
+                        mul_nw64(TxRx_5865, i_6031)
+                      let {loop_6034 : [Ry_5861][Ry_5861]f16} =
+*                       loop {merge_6036 : *[Ry_5861][Ry_5861]f16} = {merge_6032}
+*                       for i_6035:i64 < Ry_5861 do {
+                          let {binop_x_6042 : i64} =
+                            add_nw64(i_6035, binop_x_6041)
+                          let {binop_y_6043 : i64} =
+                            mul_nw64(Tk_5862, binop_x_6042)
+                          let {as_transformed_row_loc_ind_64_6044 : i64} =
+                            add_nw64(i_6031, binop_y_6043)
+                          let {as_transformed_row_loc_elem_6045 : f16} =
+                            if <fallback> loop_nonempty_6228
+                            then {
+                              let {x_6229 : f16} =
+                                as_transformed_row_glb2loc_5951[as_transformed_row_loc_ind_64_6044]
+                              in {x_6229}
+                            } else {0.0f16}
+                            : {f16}
+                          let {loop_6037 : [Ry_5861][Ry_5861]f16} =
+*                           loop {merge_6039 : *[Ry_5861][Ry_5861]f16} = {merge_6036}
+*                           for i_6038:i64 < Ry_5861 do {
+                              let {binop_x_6047 : i64} =
+                                add_nw64(i_6038, binop_y_6046)
+                              let {as_transformed_row_loc_ind_64_6049 : i64} =
+                                add_nw64(binop_x_6047, binop_y_6048)
+                              let {as_transformed_row_loc_elem_6050 : f16} =
+                                as_transformed_row_glb2loc_5992[as_transformed_row_loc_ind_64_6049]
+                              let {c_6051 : f16} =
+                                merge_6039[i_6035, i_6038]
+                              let {defunc_0_f_res_6054 : f16} =
+                                fmul16(as_transformed_row_loc_elem_6045, as_transformed_row_loc_elem_6050)
+                              let {defunc_0_op_res_6057 : f16} =
+                                fadd16(c_6051, defunc_0_f_res_6054)
+                              let {css_6058 : [Ry_5861][Ry_5861]f16} =
+                                merge_6039 with [i_6035, i_6038] = defunc_0_op_res_6057
+                              in {css_6058}
+                            }
+                          in {loop_6037}
+                        }
+                      in {loop_6034}
+                    }
+                  return {returns (private) loop_6030}
+                }
+              in {redomap_res_6059, as_transformed_row_glb2loc_5951, as_transformed_row_glb2loc_5992}
+            }
+-- Outer most k loop done. 
+-- Next is the epilogue 
+          let {as_transformed_row_glb2loc_6108 : [a_loc_sz_5868]f16} =
+            segmap(inblock; full [0, 1])
+            (ltid_seq_6088 < Ry_5861, ltid_seq_6089 < tk_div_tx_5863, ltid_y_6086 < Ty_5860, ltid_x_6087 < Ty_5860) (~ltid_flat_6085) : {[a_loc_sz_5868]f16} {
+              let {binop_y_6090 : i64} =
+                mul_nw64(Ty_5860, ltid_seq_6089)
+              let {k_6091 : i64} =
+                add_nw64(ltid_x_6087, binop_y_6090)
+              let {binop_y_6092 : i64} =
+                mul_nw64(Ty_5860, ltid_seq_6088)
+              let {i_6093 : i64} =
+                add_nw64(ltid_y_6086, binop_y_6092)
+              let {gtid_6094 : i64} =
+                add_nw64(iii_5878, i_6093)
+              let {as_transformed_row_seqdim_idx_6095 : i64} =
+                add_nw64(kk_6063, k_6091)
+              let {binop_x_6096 : bool} =
+                slt64(gtid_6094, m_5544)
+              let {binop_y_6097 : bool} =
+                slt64(as_transformed_row_seqdim_idx_6095, q_5545)
+              let {cond_6098 : bool} =
+                logand(binop_x_6096, binop_y_6097)
+              let {as_transformed_row_elem_6099 : f16} =
+                if cond_6098
+                then {
+                  let {A_elem_6101 : f16} =
+                    A_5547[gtid_6094, as_transformed_row_seqdim_idx_6095]
+                  in {A_elem_6101}
+                } else {0.0f16}
+                : {f16}
+              let {cond_6103 : bool} =
+                slt64(k_6091, Tk_5862)
+              let {as_transformed_row_loc_ind_6104 : i64} =
+                if cond_6103
+                then {
+                  let {binop_y_6105 : i64} =
+                    mul_nw64(Tk_5862, i_6093)
+                  let {x_6106 : i64} =
+                    add_nw64(k_6091, binop_y_6105)
+                  in {x_6106}
+                } else {-1i64}
+                : {i64}
+              return {loop_6061
+                      with ([as_transformed_row_loc_ind_6104] = as_transformed_row_elem_6099)}
+            }
+          let {as_transformed_row_glb2loc_6153 : [a_loc_sz_5868]f16} =
+            segmap(inblock; full [0, 1])
+            (ltid_seq_6133 < Ry_5861, ltid_seq_6134 < tk_div_tx_5863, ltid_y_6131 < Ty_5860, ltid_x_6132 < Ty_5860) (~ltid_flat_6130) : {[a_loc_sz_5868]f16} {
+              let {binop_y_6135 : i64} =
+                mul_nw64(Ty_5860, ltid_seq_6134)
+              let {k_6136 : i64} =
+                add_nw64(ltid_y_6131, binop_y_6135)
+              let {binop_y_6137 : i64} =
+                mul_nw64(Ty_5860, ltid_seq_6133)
+              let {i_6138 : i64} =
+                add_nw64(ltid_x_6132, binop_y_6137)
+              let {gtid_6139 : i64} =
+                add_nw64(jjj_5879, i_6138)
+              let {as_transformed_row_seqdim_idx_6140 : i64} =
+                add_nw64(kk_6063, k_6136)
+              let {binop_x_6141 : bool} =
+                slt64(gtid_6139, n_5546)
+              let {binop_y_6142 : bool} =
+                slt64(as_transformed_row_seqdim_idx_6140, q_5545)
+              let {cond_6143 : bool} =
+                logand(binop_x_6141, binop_y_6142)
+              let {as_transformed_row_elem_6144 : f16} =
+                if cond_6143
+                then {
+                  let {A_elem_6146 : f16} =
+                    B_5548[as_transformed_row_seqdim_idx_6140, gtid_6139]
+                  in {A_elem_6146}
+                } else {0.0f16}
+                : {f16}
+              let {cond_6148 : bool} =
+                slt64(k_6136, Tk_5862)
+              let {as_transformed_row_loc_ind_6149 : i64} =
+                if cond_6148
+                then {
+                  let {binop_y_6150 : i64} =
+                    mul_nw64(TxRx_5865, k_6136)
+                  let {x_6151 : i64} =
+                    add_nw64(i_6138, binop_y_6150)
+                  in {x_6151}
+                } else {-1i64}
+                : {i64}
+              return {loop_6062
+                      with ([as_transformed_row_loc_ind_6149] = as_transformed_row_elem_6144)}
+            }
+          let {redomap_res_6224 : [Ty_5860][Ty_5860][Ry_5861][Ry_5861]f16} =
+            segmap(inblock; full [])
+            (ltid_y_6190 < Ty_5860, ltid_x_6189 < Ty_5860) (~ltid_flat_6191) : {[Ry_5861][Ry_5861]f16} {
+              let {css_init_6192 : [Ry_5861][Ry_5861]f16} =
+                loop_6060[ltid_y_6190, ltid_x_6189, 0i64 :+ Ry_5861 * 1i64, 0i64 :+ Ry_5861 * 1i64]
+              let {loop_6193 : [Ry_5861][Ry_5861]f16} =
+                loop {merge_6195 : *[Ry_5861][Ry_5861]f16} = {css_init_6192}
+                for i_6194:i64 < Tk_5862 do {
+                  let {cmpop_x_6196 : i64} =
+                    add_nw64(kk_6063, i_6194)
+                  let {cond_6197 : bool} =
+                    slt64(cmpop_x_6196, q_5545)
+                  let {foo_6198 : [Ry_5861][Ry_5861]f16} =
+                    if cond_6197
+                    then {
+                      let {loop_nonempty_6225 : bool} =
+                        slt64(0i64, Ry_5861)
+                      let {binop_x_6206 : i64} =
+                        mul_nw64(Ry_5861, ltid_y_6190)
+                      let {binop_y_6211 : i64} =
+                        mul_nw64(Ry_5861, ltid_x_6189)
+                      let {binop_y_6213 : i64} =
+                        mul_nw64(TxRx_5865, i_6194)
+                      let {loop_6199 : [Ry_5861][Ry_5861]f16} =
+                        loop {merge_6201 : *[Ry_5861][Ry_5861]f16} = {merge_6195}
+                        for i_6200:i64 < Ry_5861 do {
+                          let {binop_x_6207 : i64} =
+                            add_nw64(i_6200, binop_x_6206)
+                          let {binop_y_6208 : i64} =
+                            mul_nw64(Tk_5862, binop_x_6207)
+                          let {as_transformed_row_loc_ind_64_6209 : i64} =
+                            add_nw64(i_6194, binop_y_6208)
+                          let {as_transformed_row_loc_elem_6210 : f16} =
+                            if <fallback> loop_nonempty_6225
+                            then {
+                              let {x_6226 : f16} =
+                                as_transformed_row_glb2loc_6108[as_transformed_row_loc_ind_64_6209]
+                              in {x_6226}
+                            } else {0.0f16}
+                            : {f16}
+                          let {loop_6202 : [Ry_5861][Ry_5861]f16} =
+                            loop {merge_6204 : *[Ry_5861][Ry_5861]f16} = {merge_6201}
+                            for i_6203:i64 < Ry_5861 do {
+                              let {binop_x_6212 : i64} =
+                                add_nw64(i_6203, binop_y_6211)
+                              let {as_transformed_row_loc_ind_64_6214 : i64} =
+                                add_nw64(binop_x_6212, binop_y_6213)
+                              let {as_transformed_row_loc_elem_6215 : f16} =
+                                as_transformed_row_glb2loc_6153[as_transformed_row_loc_ind_64_6214]
+                              let {c_6216 : f16} =
+                                merge_6204[i_6200, i_6203]
+                              let {defunc_0_f_res_6219 : f16} =
+                                fmul16(as_transformed_row_loc_elem_6210, as_transformed_row_loc_elem_6215)
+                              let {defunc_0_op_res_6222 : f16} =
+                                fadd16(c_6216, defunc_0_f_res_6219)
+                              let {css_6223 : [Ry_5861][Ry_5861]f16} =
+                                merge_6204 with [i_6200, i_6203] = defunc_0_op_res_6222
+                              in {css_6223}
+                            }
+                          in {loop_6202}
+                        }
+                      in {loop_6199}
+                    } else {merge_6195}
+                    : {[Ry_5861][Ry_5861]f16}
+                  in {foo_6198}
+                }
+              return {returns (private) loop_6193}
+            }
+          return {blkreg_tile(m_5544 / (Ty_5860 * Ry_5861), n_5546 / (Ty_5860 * Ry_5861)) redomap_res_6224}
+        }
+      in {defunc_0_map_res_5824}
+    } 
+    
+    
+    else {
+      let {B_coalesced_6231 : [q_5545][n_5546]f16} =
+        manifest((1, 0), B_5548)
+      let {defunc_0_map_res_5843 : [m_5544][n_5546]f16} =
+        segred(thread; ; grid=num_tblocks_5841; blocksize=segred_tblock_size_5840)
+        (gtid_5844 < m_5544, gtid_5845 < n_5546, gtid_5846 < q_5545) (~phys_tid_5847)
+        ({0.0f16},
+        ,
+        commutative \ {eta_p_5848 : f16,
+                       eta_p_5849 : f16}
+          : {f16} ->
+          let {defunc_0_op_res_5850 : f16} =
+            fadd16(eta_p_5848, eta_p_5849)
+          in {defunc_0_op_res_5850})
+        : {f16} {
+          let {eta_p_5853 : f16} =
+            A_5547[gtid_5844, gtid_5846]
+          let {eta_p_5854 : f16} =
+            B_coalesced_6231[gtid_5846, gtid_5845]
+          let {defunc_0_f_res_5855 : f16} =
+            fmul16(eta_p_5853, eta_p_5854)
+          return {returns defunc_0_f_res_5855}
+        }
+      in {defunc_0_map_res_5843}
+    }
+    : {[m_5544][n_5546]f16}
+  in {defunc_0_map_res_5823}
+}
