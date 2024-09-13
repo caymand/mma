@@ -1,5 +1,5 @@
 build
-cutlass
+# cutlass
 .vscode
 CMakeFiles
 src/cuda_prototype/main

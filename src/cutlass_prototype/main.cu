@@ -37,6 +37,12 @@ cublasStatus_t cublas_wrapper(
     );
 }
 
+/*
+Shape: Defines a coordinate space
+Stride: Defines an index space.
+Layout: Map between shapes by strides.
+*/
+
 
 template <class TA, class TB, class TC>
 void run_mma(
@@ -50,17 +56,15 @@ void run_mma(
     // CuTe expect the matrices to be stored: (M,K) x (N, K).
     // The reduction is over the K dimension, so this is where we stride by 1.
     // And each row is ldA wide.
+    // ldA to get to next row. Stide 1 to get to next column elm.
     auto strideA = make_stride(ldA, Int<1>{}); // (M, K)
     auto strideB = make_stride(Int<1>{}, ldA); // (K, N)
-    auto strideC = make_stride(Int<1>{}, ldC); // (M, N)
+    auto strideC = make_stride(ldC, Int<1>{}); // (M, N)
 
     // Tile sizes for the 1block. CuTe calls a threadblock CTA (Cuda Thread Array)
     auto tileM = Int<128>{};
     auto tileN = Int<128>{};
     auto tileK = Int<8>{};
-    // auto tileM = Int<8>{};
-    // auto tileN = Int<8>{};
-    // auto tileK = Int<128>{};
 
     // Define tall thin tiles in A and long short tiles in B    
     auto cta_tiler_shape = make_shape(tileM, tileN, tileK);
@@ -70,17 +74,19 @@ void run_mma(
     auto sharedC = make_layout(make_shape(tileM, tileN), LayoutRight{});
 
     // Give each thread a small 4x1 chunk to copy. TODO: does this mean all 8 elements in k dimens and 4 rows?
+    // This is the organization of threads we want to use to load the chunk of memory used
+    // by the CTA into shared memory.
     auto loadTileA = make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{});
     auto loadTileB = make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{});
     // This means that each thread needs to compute a 8x8 tile of C
     auto threadLayoutC = make_layout(make_shape(Int<16>{}, Int<16>{}), LayoutRight{});
 
-    gemm_device(
-        prob_shape, cta_tiler_shape,
-        A, strideA, sharedA, loadTileA,
-        B, strideB, sharedB, loadTileB,
-        C, strideC, sharedC, threadLayoutC        
-    );
+    // gemm_device(
+    //     prob_shape, cta_tiler_shape,
+    //     A, strideA, sharedA, loadTileA,
+    //     B, strideB, sharedB, loadTileB,
+    //     C, strideC, sharedC, threadLayoutC        
+    // );
     // A CuTe layout is a tuple of (Shape, Stride).
 }
 
