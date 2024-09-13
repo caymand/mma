@@ -2,7 +2,9 @@
 #include <iostream>
 #include <numeric>
 #include <algorithm>
-#include <sys/time.h>
+
+#include <chrono>
+
 #include <cuda_runtime.h>
 #include <cstdarg>
 
@@ -26,7 +28,7 @@ class RandomMatrix
         T* to_gpu();
         unsigned flatSize();
         RandomMatrix<T, N>& setSeed(unsigned s);        
-        template <int RANDMAX> void fill_rand(const unsigned dimensions, ...);
+        template <int R> void fill_rand(const unsigned dimensions, ...);
         template <typename U> void fill_from(RandomMatrix<U, N> &other, const unsigned dimensions, ...);
         void fill_zeros(const unsigned int dimensions, ...);
 };
@@ -50,8 +52,8 @@ class TimeMeasurement
 {
     private:
         int resolution;
-        timeval tstart;
-        timeval tend;        
+        std::chrono::steady_clock::time_point tstart;
+        std::chrono::steady_clock::time_point tend;  
     public:
         TimeMeasurement(int resolution = 1000000);
         int start();
@@ -211,7 +213,7 @@ RandomMatrix<T, N>& RandomMatrix<T, N>::setSeed(unsigned s)
     return *this;
 }
 template <typename T, int N>
-template <int RANDMAX>
+template <int R>
 void RandomMatrix<T, N>::fill_rand(const unsigned first_dim, ...)
 {
     va_list remaining_dims;
@@ -220,7 +222,7 @@ void RandomMatrix<T, N>::fill_rand(const unsigned first_dim, ...)
     this->flatMat.resize(this->flatSize());
     std::cout << "Capacity: " << this->flatSize()  << std::endl;
     std::generate(this->flatMat.begin(), this->flatMat.end(), [](){
-        return (T) (rand() / ((float) RANDMAX));
+        return (T) (rand() / ((float) R));
     });
 }
 
@@ -241,19 +243,15 @@ TimeMeasurement::TimeMeasurement(int resolution) {
 }
 int TimeMeasurement::start()
 {
-    return gettimeofday(&this->tstart, NULL);
+    tstart = std::chrono::steady_clock::now(); 
+    return 0;
 }
 int TimeMeasurement::stop()
 {
-    return gettimeofday(&this->tend, NULL);
+    tend = std::chrono::steady_clock::now(); 
+    return 0;
 }
 long int TimeMeasurement::elapsed()
 {
-    struct timeval &t2 = this->tend;
-    struct timeval &t1 = this->tstart;
-    long int diff = (
-            (t2.tv_usec + this->resolution * t2.tv_sec) -
-            (t1.tv_usec + this->resolution * t1.tv_sec)
-    );
-    return diff > 0 ? diff : -1;
+    return std::chrono::duration_cast<std::chrono::microseconds>(tend - tstart).count();    
 }
