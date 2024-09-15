@@ -1,4 +1,5 @@
 #include <cute/tensor.hpp>
+#include <cute/util/debug.hpp>
 
 using namespace cute;
 
@@ -7,95 +8,133 @@ template <class ProblemShape, class CtaTiler,
           class TB, class BStride, class BSmemLayout, class BThreadLayout,
           class TC, class CStride, class CSmemLayout, class CThreadLayout,
           class Alpha, class Beta>
-__global__ static
+__global__
 __launch_bounds__(decltype(size(CThreadLayout{}))::value)
 void
-gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
-            TA const* A, AStride strideA, ASmemLayout sA_layout, AThreadLayout tA,
-            TB const* B, BStride strideB, BSmemLayout sB_layout, BThreadLayout tB,
-            TC      * C, CStride strideC, CSmemLayout sC_layout, CThreadLayout tC)
+mmm_kernel(ProblemShape shape_MNK, CtaTiler cta_tiler,
+		   TA const* A, AStride strideA, ASmemLayout sA_layout, AThreadLayout tA,
+		   TB const* B, BStride strideB, BSmemLayout sB_layout, BThreadLayout tB,
+		   TC      * C, CStride strideC, CSmemLayout sC_layout, CThreadLayout tC,
+		   Alpha alpha, Beta beta)
 {
-    CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});          // (M, N, K)
-    // Assert that the shape and stride are "congurent": same dimensions.
-    CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), strideA)); // dA strides for shape MK
-    CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), strideB)); // dB strides for shape NK
-    CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), strideC)); // dC strides for shape MN
-    // Assert that the shared memory layouts can be statically known
-    static_assert(is_static<ASmemLayout>::value);
-    static_assert(is_static<BSmemLayout>::value);
-    static_assert(is_static<CSmemLayout>::value);
-    // Assert that the tiler and shared memory has the same layout.
-    // That is, all the data to be used for the tile can be copied into shared memory
-    CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));  // BLK_M
-    CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
-    CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
-    CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
-    CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
-    CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));  // BLK_K
+/* ASSERTION FOR LAYOUT */
+	// Problem has 3 modes
+	CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});
+	// There is a stride defined for each mode of the input matrices.
+	CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), strideA)); // (M, K)
+	CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), strideB)); // (N, K)
+	CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), strideC)); // (M, N)
 
-    static_assert(is_static<AThreadLayout>::value);
-    static_assert(is_static<BThreadLayout>::value);
+/* INITIALIZE MATRICES TO TENSORS */
+	// The tensor is semantically the tuple of a data pointer and a Layout.
+	// The layout is the shape and the stride information.
+	Tensor mA = make_tensor(make_gmem_ptr(A), select<0,2>(shape_MNK), strideA); // (M, K)
+	Tensor mB = make_tensor(make_gmem_ptr(B), select<1,2>(shape_MNK), strideB); // (N, K)
+	Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), strideC); //
+	
+/* TILE THE INPUT MATRICES */
+	// Find the tile for this threadBlock.
+	// We simply use block coordinates for this and expect the kernel launch
+	// to have created a proper grid. The K dimension is the cute::Underscore type
+	// and is thus unspecified. This is becuase this is the sequential reduce dim.
+	auto cta_cord = make_coord(blockIdx.x, blockIdx.y, _);
 
-    CUTE_STATIC_ASSERT_V(size(tA) == size(tB));                          // NumThreads
+	// Next we have to get a "view" or slice of the input matrices for the block
+	// in global memory.
+	// For this the local_tile is used. It is a cute inner_partition.
+	// This means the inner mode of the tiler is preserved after a zipped_divide.
+	// This way, when slicing out the tensor using the tiler, we get the
+	// tile size of elements. The outer mode would give the number of tiles.
+	// The coord selects the actual tile (this way we get the inner mode).
+	// See: https://github.com/NVIDIA/cutlass/blob/main/media/docs/cute/0x_gemm_tutorial.md#cta-partitioning
 
-    CUTE_STATIC_ASSERT_V(size<0>(cta_tiler) % size<0>(tA) == Int<0>{});  // BLK_M / THR_M
-    CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) % size<1>(tA) == Int<0>{});  // BLK_K / THR_K
-    CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) % size<0>(tB) == Int<0>{});  // BLK_N / THR_N
-    CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) % size<1>(tB) == Int<0>{});  // BLK_K / THR_K
+	// We select only the relevant modes of the tiler and coordinate.
+	// The third index ranges over all k tiles. We need to iterate over this
+	Tensor gA = local_tile(mA, select<0, 2>(cta_tiler), select<0,2>(cta_cord)); // (BLK_M, BLK_K, k)
+	Tensor gB = local_tile(mB, select<1,2>(cta_tiler), select<1,2>(cta_cord)); // (BLK_N, BLK_K, k). TODO: Completely understand this
+	Tensor gC = local_tile(mC, select<0,1>(cta_tiler), select<0,1>(cta_cord)); // (BLK_M, BLK_N)
 
-    static_assert(is_static<CThreadLayout>::value);
+/* SHARED MEMORY */
+	// Need shared memory to be statically known
+	static_assert(is_static<ASmemLayout>::value);
+	static_assert(is_static<BSmemLayout>::value);
+	static_assert(is_static<CSmemLayout>::value);
+	
+	CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));
+	CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  
+	CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));
+	CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));
+	// CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));
+	// CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));
 
-    CUTE_STATIC_ASSERT_V(size(tC) == size(tA));                          // NumThreads
+	static_assert(is_static<AThreadLayout>::value);
+	static_assert(is_static<BThreadLayout>::value);
 
-    CUTE_STATIC_ASSERT_V(size<0>(cta_tiler) % size<0>(tC) == Int<0>{});  // BLK_M / THR_M
-    CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) % size<1>(tC) == Int<0>{});  // BLK_N / THR_N
+	// Want the two layouts of threads for copying to match. This wayy all threads
+	// can be used to first copy a slice of A and the of B
+	CUTE_STATIC_ASSERT_V(size(tA) == size(tB));
+	// Assert that there are no "left over" elements to be copied
+	CUTE_STATIC_ASSERT_V(size<0>(cta_tiler) % size<0>(tA) == Int<0>{});  // BLK_M / THR_M
+	CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) % size<1>(tA) == Int<0>{});  // BLK_K / THR_K
+	CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) % size<0>(tB) == Int<0>{});  // BLK_N / THR_N
+	CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) % size<1>(tB) == Int<0>{});  // BLK_K / THR_K
 
-    // CuTe layout is the tuple (shape, stride)
-    auto layoutA = make_layout(select<0,2>(shape_MNK), strideA);
-    auto layoutB = make_layout(select<2,1>(shape_MNK), strideB);
-    auto layoutC = make_layout(select<0,1>(shape_MNK), strideC);
 
-    // Tensor are pointors to memory and a "layout" - shape and stride information.
-    Tensor gA = make_tensor(make_gmem_ptr(A), layoutA);
-    Tensor gB = make_tensor(make_gmem_ptr(B), layoutB);
-    Tensor gC = make_tensor(make_gmem_ptr(C), layoutC);
+	// Define the shared memory layout. This computes the size of the layout in
+	// flat dimensions. cosize is the physical length, so we get it in bytes.
+	__shared__ TA smemA[cosize_v<ASmemLayout>]; // (BLK_M, BLK_K)
+	__shared__ TB smemB[cosize_v<BSmemLayout>]; // (BLK_N, BLK_K)
 
-    // Want all tiles of K (reduction dimension) so it is given the wildcard
-    auto block_coord = make_coord(blockIdx.x, blockIdx.y, _); 
-    /*  local_tile is a composition of zipped_divide and slicing out the 
-    remaining tensor.    
-    see"../../cutlass/media/docs/cute/03_tensor.md"
-    This can be used to give each block the sliced out tile.
+    Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout); // (BLK_M, BLK_K)
+	Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout); // (BLK_N, BLK_K)
 
-    This is known as an "inner-partition". 
-    That means we keep the 128x8 tile mode and select one for each block. 
-    I.e. the below tensor point to 128x8 elements.
-    */
-    Tensor g_blockA = local_tile(gA, select<0,2>(cta_tiler), select<0,2>(block_coord));
-    Tensor g_blockB = local_tile(gB, select<2,1>(cta_tiler), select<2,1>(block_coord));
-    Tensor g_blockC = local_tile(gC, select<0,1>(cta_tiler), select<0,1>(block_coord));
+	// Similar to local_tile in that it corresponds to first doing a zipped divide
+	// over the tile in global using the layout of threads. However, after
+	// the zipped divide, the threadIdx.x is used to index into the first mode,
+	// the tile mode.
+	// The result has the size of the rest (outer) mode of the zipped dive.
+	// This correspponds to how many elements each thread needs to copy.
+	// Thus, this gives us a small view of the elements needed to copy to and from.
+	Tensor tAgA = local_partition(gA, tA, threadIdx.x); // (THR_M, THX_K, k)
+	Tensor tAsA = local_partition(sA, tA, threadIdx.x); // (THR_M, THX_K)
+	
+	Tensor tBgB = local_partition(gB, tB, threadIdx.x);
+	Tensor tBsB = local_partition(sB, tB, threadIdx.x);
 
-    __shared__ TA smemA[cosize_v<ASmemLayout>];
-    __shared__ TB smemB[cosize_v<BSmemLayout>];
-    Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);
-    Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);
+/* CALCULATE OUTPUT RESULT TILES*/
+	static_assert(is_static<CThreadLayout>::value);
+	// Assert output tile for threads is as large as number of threads.
+	CUTE_STATIC_ASSERT_V(size(tC) == size(tA));
+	CUTE_STATIC_ASSERT_V(size<0>(cta_tiler) % size<0>(tC) == Int<0>{});
+	CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) % size<1>(tC) == Int<0>{});
+	
+	// This will transform into -> (BLK_M / THR_M, BLK_K) since we fix the K-mode
+	Tensor tCsA = local_partition(sA, tC, threadIdx.x, Step<_1,X>{}); // (THR_M, BLK_K)
+	Tensor tCsB = local_partition(sA, tC, threadIdx.x, Step<X, _1>{}); // (THR_N, BLK_K)
+	Tensor tCgC = local_partition(gC, tC, threadIdx.x, Step<_1,_1>{}); // (THR_M, THR_N)	
+	// Register accumulator
+	Tensor tCrC = make_tensor_like(tCgC);
 
-    /* Another option is local_partition that performs a "outer-partition".
-    In this case we keep the "outer or rest mode". After the zipped_divide
-    we keep the outer mode. This makes each thread point to an element?
-    */
-    Tensor threadtileAglobalA = local_partition(gA, tA, threadIdx.x);
-    Tensor threadtileAsharedA = local_partition(sA, tA, threadIdx.x);
-    Tensor threadtileBglobalB = local_partition(gB, tA, threadIdx.x);
-    Tensor threadtileBsharedB = local_partition(sA, tA, threadIdx.x);
+	CUTE_STATIC_ASSERT_V(size<0>(tCrC) == size<0>(tCgC)); // THR_M
+	CUTE_STATIC_ASSERT_V(size<0>(tCrC) == size<0>(tCsA)); // THR_M
+	CUTE_STATIC_ASSERT_V(size<1>(tCrC) == size<1>(tCgC)); // THR_N
+	CUTE_STATIC_ASSERT_V(size<1>(tCrC) == size<0>(tCsB)); // THR_N
+	CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCsB)); // BLK_K
 
-    CUTE_STATIC_ASSERT_V(size<0>(threadtileAglobalA) == size<0>(threadtileAsharedA));  // THR_M
-    CUTE_STATIC_ASSERT_V(size<1>(threadtileAglobalA) == size<1>(threadtileAsharedA));  // THR_K
-    CUTE_STATIC_ASSERT_V(size<0>(threadtileBglobalB) == size<0>(threadtileBsharedB));  // THR_N
-    CUTE_STATIC_ASSERT_V(size<1>(threadtileBglobalB) == size<1>(threadtileBsharedB));  // THR_K
+/* MAIN LOOP */
+	// Max number of tiles to be done before epiloge. This is the k 
+	auto K_TILE_MAX = size<2>(tAgA);
+	for (int k_tile = 0; k_tile < K_TILE_MAX; k_tile++)
+	{
+		copy(tAgA(_, _, k_tile), tAsA);
+		copy(tBgB(_, _, k_tile), tBsB);
 
-    // Parition the threads tile for C 
-    // The _ is a cute::Underscore type and its semantics is like [:, x] in python. Retain that mode
-    Tensor threadtileCsharedA = local_partition(sA, tC, threadIdx.x, Step<_1, X>{});
-
+		cp_async_fence();
+		cp_async_wait<0>();
+		__syncthreads();
+		gemm(tCsA, tCsB, tCrC);
+		__syncthreads();
+	}
+	// Each thread writes back their result to global memory
+	axpby(alpha, tCrC, beta, tCgC);
 }

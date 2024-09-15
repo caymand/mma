@@ -15,14 +15,16 @@ void create_matrix(int height, int width, T *matrix, int seed = 42)
     }
 }
 
-int gpuAssert(cudaError_t code) 
-{
-    if(code != cudaSuccess) {
-        printf("GPU Error: %s\n", cudaGetErrorString(code));
-        exit(1);
-    }
-    return 1;
-}
+// ALready defined in cuda_prototype/helpers.cuh
+
+// int gpuAssert(cudaError_t code) 
+// {
+//     if(code != cudaSuccess) {
+//         printf("GPU Error: %s\n", cudaGetErrorString(code));
+//         exit(1);
+//     }
+//     return 1;
+// }
 
 
 template<typename T>

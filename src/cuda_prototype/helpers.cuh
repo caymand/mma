@@ -190,6 +190,7 @@ T* RandomMatrix<T, N>::to_cpu()
     return this->flatMat.data();
 }
 
+/*Copy host memory to gpu.*/
 template <typename T, int N>
 T* RandomMatrix<T, N>::to_gpu()
 {
