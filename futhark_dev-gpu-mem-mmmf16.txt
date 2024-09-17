@@ -1,0 +1,827 @@
+types {
+  
+}
+
+
+
+entry("main",
+      {Atiles: [][][][]f16,
+       Btiles: [][][][]f16},
+      {*[][][][]f16})
+  entry_main (tm₀_7076 : i64,
+              tk₁_7077 : i64,
+              cm₂_7078 : i64,
+              ck₃_7079 : i64,
+              tn₄_7080 : i64,
+              cn₅_7081 : i64,
+              Atiles_7082 : [tm₀_7076][tk₁_7077][cm₂_7078][ck₃_7079]f16,
+              Btiles_7083 : [tk₁_7077][tn₄_7080][ck₃_7079][cn₅_7081]f16)
+  : {*[tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} = {
+  let {unflatten_res_7868 : [cm₂_7078][cn₅_7081]f16} =
+    replicate([cm₂_7078][cn₅_7081], 0.0f16)
+  let {suff_outer_par_8047 : bool} =
+    cmp_size(suff_outer_par_0, threshold(def, )) <= tm₀_7076
+  let {y_8023 : i64} =
+    mul_nw64(ck₃_7079, cn₅_7081)
+  let {y_8024 : i64} =
+    mul_nw64(cm₂_7078, y_8023)
+  let {y_8025 : i64} =
+    mul_nw64(tk₁_7077, y_8024)
+  let {one_intra_par_min_8026 : i64} =
+    mul_nw64(tn₄_7080, y_8025)
+  let {one_intra_par_min_8027 : i64} =
+    mul_nw64(cm₂_7078, tn₄_7080)
+  let {y_8028 : i64} =
+    mul_nw64(tn₄_7080, cn₅_7081)
+  let {one_intra_par_min_8029 : i64} =
+    mul_nw64(cm₂_7078, y_8028)
+  let {y_8039 : i64} =
+    smin64(one_intra_par_min_8026, y_8028)
+  let {y_8040 : i64} =
+    smin64(one_intra_par_min_8029, y_8039)
+  let {intra_avail_par_8041 : i64} =
+    smin64(one_intra_par_min_8027, y_8040)
+  let {y_8042 : i64} =
+    smax64(one_intra_par_min_8026, y_8028)
+  let {y_8043 : i64} =
+    smax64(one_intra_par_min_8029, y_8042)
+  let {computed_tblock_size_7945 : i64} =
+    smax64(one_intra_par_min_8027, y_8043)
+  let {max_tblock_size_8119 : i64} =
+    get_size_max(thread_block_size)
+  let {fits_8120 : bool} =
+    sle64(computed_tblock_size_7945, max_tblock_size_8119)
+  let {suff_intra_par_8118 : bool} =
+    cmp_size(suff_intra_par_1, threshold(32, !suff_outer_par_0)) <= intra_avail_par_8041
+  let {intra_suff_and_fits_8121 : bool} =
+    logand(suff_intra_par_8118, fits_8120)
+  let {nest_size_8878 : i64} =
+    mul_nw64(tm₀_7076, tn₄_7080)
+  let {segmap_tblock_size_8879 : i64} =
+    get_size(segmap_tblock_size_8177, thread_block_size)
+  let {num_tblocks_8880 : i64} =
+    calc_num_tblocks(nest_size_8878, segmap_num_tblocks_8179, segmap_tblock_size_8879)
+  let {suff_outer_par_8884 : bool} =
+    cmp_size(suff_outer_par_2, threshold(def, !suff_outer_par_0 !suff_intra_par_1)) <= nest_size_8878
+  let {fits_8889 : bool} =
+    sle64(tk₁_7077, max_tblock_size_8119)
+  let {suff_intra_par_8891 : bool} =
+    cmp_size(suff_intra_par_3, threshold(32, !suff_outer_par_2 !suff_outer_par_0 !suff_intra_par_1)) <= tk₁_7077
+  let {intra_suff_and_fits_8892 : bool} =
+    logand(fits_8889, suff_intra_par_8891)
+  let {y_8978 : i64} =
+    mul_nw64(cm₂_7078, cn₅_7081)
+  let {y_8979 : i64} =
+    mul_nw64(tk₁_7077, y_8978)
+  let {y_8980 : i64} =
+    mul_nw64(tn₄_7080, y_8979)
+  let {comparatee_8981 : i64} =
+    mul_nw64(tm₀_7076, y_8980)
+  let {suff_outer_par_8982 : bool} =
+    cmp_size(suff_outer_par_5, threshold(def, !suff_outer_par_2 !suff_intra_par_3 !suff_outer_par_0 !suff_intra_par_1)) <= comparatee_8981
+  let {nest_size_9005 : i64} =
+    mul_nw64(ck₃_7079, comparatee_8981)
+  let {segred_tblock_size_9006 : i64} =
+    get_size(segred_tblock_size_8537, thread_block_size)
+  let {num_tblocks_9007 : i64} =
+    calc_num_tblocks(nest_size_9005, segred_num_tblocks_8539, segred_tblock_size_9006)
+  let {y_9067 : i64} =
+    mul_nw64(tn₄_7080, y_8978)
+  let {nest_size_9068 : i64} =
+    mul_nw64(tm₀_7076, y_9067)
+  let {segmap_tblock_size_9069 : i64} =
+    get_size(segmap_tblock_size_8300, thread_block_size)
+  let {suff_outer_par_9075 : bool} =
+    cmp_size(suff_outer_par_4, threshold(def, !suff_outer_par_2 !suff_intra_par_3 !suff_outer_par_0 !suff_intra_par_1)) <= nest_size_9068
+  let {segmap_tblock_size_9094 : i64} =
+    get_size(segmap_tblock_size_8334, thread_block_size)
+  let {segmap_tblock_size_8085 : i64} =
+    get_size(segmap_tblock_size_8051, thread_block_size)
+  let {num_tblocks_8086 : i64} =
+    calc_num_tblocks(tm₀_7076, segmap_num_tblocks_8053, segmap_tblock_size_8085)
+  let {Ty_9121 : i64} =
+    get_size(Ty_9119, tile_size)
+  let {Ry_9122 : i64} =
+    get_size(Ry_9120, reg_tile_size)
+  let {Tk_9123 : i64} =
+    get_size(Tk_9118, tile_size)
+  let {TxRx_9126 : i64} =
+    mul_nw64(Ty_9121, Ry_9122)
+  let {a_loc_sz_9129 : i64} =
+    mul_nw64(Tk_9123, TxRx_9126)
+  let {tblock_size_9138 : i64} =
+    mul_nw64(Ty_9121, Ty_9121)
+  let {loop_nonempty_9493 : bool} =
+    slt64(0i64, Ry_9122)
+  let {defunc_0_map_res_7942 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+    if <equiv> suff_outer_par_8047
+    then {
+      let {Atiles_coalesced_9564 : [tm₀_7076][tk₁_7077][cm₂_7078][ck₃_7079]f16} =
+        manifest((1, 2, 3, 0), Atiles_7082)
+      let {defunc_0_map_res_8088 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+        segmap(thread; virtualise; grid=num_tblocks_8086; blocksize=segmap_tblock_size_8085)
+        (gtid_8089 < tm₀_7076) (~phys_tid_8090) : {[tn₄_7080][cm₂_7078][cn₅_7081]f16} {
+          let {result_9496 : [tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+            scratch(f16, tn₄_7080, cm₂_7078, cn₅_7081)
+          let {defunc_0_map_res_8092 : [tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+            loop {mapout_9497 : *[tn₄_7080][cm₂_7078][cn₅_7081]f16} = {result_9496}
+            for i_9498:i64 < tn₄_7080 do {
+              let {defunc_0_f_res_8094 : [cm₂_7078][cn₅_7081]f16} =
+                loop {redout_9500 : [cm₂_7078][cn₅_7081]f16} = {unflatten_res_7868}
+                for i_9501:i64 < tk₁_7077 do {
+                  let {result_9502 : [cm₂_7078][cn₅_7081]f16} =
+                    scratch(f16, cm₂_7078, cn₅_7081)
+                  let {defunc_0_map_res_8106 : [cm₂_7078][cn₅_7081]f16} =
+                    loop {mapout_9503 : *[cm₂_7078][cn₅_7081]f16} = {result_9502}
+                    for i_9504:i64 < cm₂_7078 do {
+                      let {result_9506 : [cn₅_7081]f16} =
+                        scratch(f16, cn₅_7081)
+                      let {defunc_0_map_res_8108 : [cn₅_7081]f16} =
+                        loop {mapout_9507 : *[cn₅_7081]f16} = {result_9506}
+                        for i_9508:i64 < cn₅_7081 do {
+                          let {defunc_0_f_res_8110 : f16} =
+                            loop {redout_9510 : f16} = {0.0f16}
+                            for i_9511:i64 < ck₃_7079 do {
+                              let {eta_p_8114 : f16} =
+                                Atiles_coalesced_9564[gtid_8089, i_9501, i_9504, i_9511]
+                              let {eta_p_8115 : f16} =
+                                Btiles_7083[i_9501, i_9498, i_9511, i_9508]
+                              let {defunc_0_f_res_8116 : f16} =
+                                fmul16(eta_p_8114, eta_p_8115)
+                              let {defunc_0_op_res_8113 : f16} =
+                                fadd16(defunc_0_f_res_8116, redout_9510)
+                              in {defunc_0_op_res_8113}
+                            }
+                          let {lw_dest_9509 : [cn₅_7081]f16} =
+                            mapout_9507 with [i_9508] = defunc_0_f_res_8110
+                          in {lw_dest_9509}
+                        }
+                      let {lw_dest_9505 : [cm₂_7078][cn₅_7081]f16} =
+                        mapout_9503 with [i_9504, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_map_res_8108
+                      in {lw_dest_9505}
+                    }
+                  let {result_9512 : [cm₂_7078][cn₅_7081]f16} =
+                    scratch(f16, cm₂_7078, cn₅_7081)
+                  let {defunc_0_map_res_8097 : [cm₂_7078][cn₅_7081]f16} =
+                    loop {mapout_9513 : *[cm₂_7078][cn₅_7081]f16} = {result_9512}
+                    for i_9514:i64 < cm₂_7078 do {
+                      let {result_9516 : [cn₅_7081]f16} =
+                        scratch(f16, cn₅_7081)
+                      let {defunc_0_map_res_8100 : [cn₅_7081]f16} =
+                        loop {mapout_9517 : *[cn₅_7081]f16} = {result_9516}
+                        for i_9518:i64 < cn₅_7081 do {
+                          let {eta_p_8101 : f16} =
+                            redout_9500[i_9514, i_9518]
+                          let {eta_p_8102 : f16} =
+                            defunc_0_map_res_8106[i_9514, i_9518]
+                          let {defunc_0_f_res_8103 : f16} =
+                            fadd16(eta_p_8101, eta_p_8102)
+                          let {lw_dest_9519 : [cn₅_7081]f16} =
+                            mapout_9517 with [i_9518] = defunc_0_f_res_8103
+                          in {lw_dest_9519}
+                        }
+                      let {lw_dest_9515 : [cm₂_7078][cn₅_7081]f16} =
+                        mapout_9513 with [i_9514, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_map_res_8100
+                      in {lw_dest_9515}
+                    }
+                  in {defunc_0_map_res_8097}
+                }
+              let {lw_dest_9499 : [tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                mapout_9497 with [i_9498, 0i64 :+ cm₂_7078 * 1i64, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_f_res_8094
+              in {lw_dest_9499}
+            }
+          return {returns defunc_0_map_res_8092}
+        }
+      in {defunc_0_map_res_8088}
+    } else {
+      let {defunc_0_map_res_9112 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+        if <equiv> intra_suff_and_fits_8121
+        then {
+          let {defunc_0_map_res_8122 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+            segmap(block; ; grid=tm₀_7076; blocksize=computed_tblock_size_7945)
+            (gtid_8123 < tm₀_7076) (~phys_tblock_id_8124) : {[tn₄_7080][cm₂_7078][cn₅_7081]f16} {
+              let {defunc_0_f_res_map_acc_r_8127 : [tn₄_7080][tk₁_7077][cm₂_7078][cn₅_7081]f16} =
+                segred(inblock; )
+                (gtid_8128 < tn₄_7080, gtid_8129 < tk₁_7077, gtid_8130 < cm₂_7078, gtid_8131 < cn₅_7081, gtid_8132 < ck₃_7079) (~phys_tid_8133)
+                ({0.0f16},
+                ,
+                commutative \ {eta_p_8134 : f16,
+                               eta_p_8135 : f16}
+                  : {f16} ->
+                  let {defunc_0_op_res_8136 : f16} =
+                    fadd16(eta_p_8134, eta_p_8135)
+                  in {defunc_0_op_res_8136})
+                : {f16} {
+                  let {eta_p_8142 : f16} =
+                    Atiles_7082[gtid_8123, gtid_8129, gtid_8130, gtid_8132]
+                  let {eta_p_8143 : f16} =
+                    Btiles_7083[gtid_8129, gtid_8128, gtid_8132, gtid_8131]
+                  let {defunc_0_f_res_8144 : f16} =
+                    fmul16(eta_p_8142, eta_p_8143)
+                  return {returns defunc_0_f_res_8144}
+                }
+              let {defunc_0_map_res_8160 : [tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                segmap(inblock; )
+                (gtid_8161 < tn₄_7080, gtid_8162 < cm₂_7078, gtid_8163 < cn₅_7081) (~phys_tid_8164) : {f16} {
+                  let {defunc_0_map_res_8167 : f16} =
+                    loop {redout_9520 : f16} = {0.0f16}
+                    for i_9521:i64 < tk₁_7077 do {
+                      let {x_8171 : f16} =
+                        defunc_0_f_res_map_acc_r_8127[gtid_8161, i_9521, gtid_8162, gtid_8163]
+                      let {defunc_0_f_res_8170 : f16} =
+                        fadd16(x_8171, redout_9520)
+                      in {defunc_0_f_res_8170}
+                    }
+                  return {returns defunc_0_map_res_8167}
+                }
+              return {returns defunc_0_map_res_8160}
+            }
+          in {defunc_0_map_res_8122}
+        } else {
+          let {defunc_0_map_res_8893 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+            if <equiv> suff_outer_par_8884
+            then {
+              let {Atiles_coalesced_9565 : [tm₀_7076][tk₁_7077][cm₂_7078][ck₃_7079]f16} =
+                manifest((1, 2, 3, 0), Atiles_7082)
+              let {defunc_0_map_res_8894 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                segmap(thread; virtualise; grid=num_tblocks_8880; blocksize=segmap_tblock_size_8879)
+                (gtid_8895 < tm₀_7076, gtid_8896 < tn₄_7080) (~phys_tid_8897) : {[cm₂_7078][cn₅_7081]f16} {
+                  let {defunc_0_f_res_8900 : [cm₂_7078][cn₅_7081]f16} =
+                    loop {redout_9522 : [cm₂_7078][cn₅_7081]f16} = {unflatten_res_7868}
+                    for i_9523:i64 < tk₁_7077 do {
+                      let {result_9524 : [cm₂_7078][cn₅_7081]f16} =
+                        scratch(f16, cm₂_7078, cn₅_7081)
+                      let {defunc_0_map_res_8912 : [cm₂_7078][cn₅_7081]f16} =
+                        loop {mapout_9525 : *[cm₂_7078][cn₅_7081]f16} = {result_9524}
+                        for i_9526:i64 < cm₂_7078 do {
+                          let {result_9528 : [cn₅_7081]f16} =
+                            scratch(f16, cn₅_7081)
+                          let {defunc_0_map_res_8914 : [cn₅_7081]f16} =
+                            loop {mapout_9529 : *[cn₅_7081]f16} = {result_9528}
+                            for i_9530:i64 < cn₅_7081 do {
+                              let {defunc_0_f_res_8916 : f16} =
+                                loop {redout_9532 : f16} = {0.0f16}
+                                for i_9533:i64 < ck₃_7079 do {
+                                  let {eta_p_8920 : f16} =
+                                    Atiles_coalesced_9565[gtid_8895, i_9523, i_9526, i_9533]
+                                  let {eta_p_8921 : f16} =
+                                    Btiles_7083[i_9523, gtid_8896, i_9533, i_9530]
+                                  let {defunc_0_f_res_8922 : f16} =
+                                    fmul16(eta_p_8920, eta_p_8921)
+                                  let {defunc_0_op_res_8919 : f16} =
+                                    fadd16(defunc_0_f_res_8922, redout_9532)
+                                  in {defunc_0_op_res_8919}
+                                }
+                              let {lw_dest_9531 : [cn₅_7081]f16} =
+                                mapout_9529 with [i_9530] = defunc_0_f_res_8916
+                              in {lw_dest_9531}
+                            }
+                          let {lw_dest_9527 : [cm₂_7078][cn₅_7081]f16} =
+                            mapout_9525 with [i_9526, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_map_res_8914
+                          in {lw_dest_9527}
+                        }
+                      let {result_9534 : [cm₂_7078][cn₅_7081]f16} =
+                        scratch(f16, cm₂_7078, cn₅_7081)
+                      let {defunc_0_map_res_8903 : [cm₂_7078][cn₅_7081]f16} =
+                        loop {mapout_9535 : *[cm₂_7078][cn₅_7081]f16} = {result_9534}
+                        for i_9536:i64 < cm₂_7078 do {
+                          let {result_9538 : [cn₅_7081]f16} =
+                            scratch(f16, cn₅_7081)
+                          let {defunc_0_map_res_8906 : [cn₅_7081]f16} =
+                            loop {mapout_9539 : *[cn₅_7081]f16} = {result_9538}
+                            for i_9540:i64 < cn₅_7081 do {
+                              let {eta_p_8907 : f16} =
+                                redout_9522[i_9536, i_9540]
+                              let {eta_p_8908 : f16} =
+                                defunc_0_map_res_8912[i_9536, i_9540]
+                              let {defunc_0_f_res_8909 : f16} =
+                                fadd16(eta_p_8907, eta_p_8908)
+                              let {lw_dest_9541 : [cn₅_7081]f16} =
+                                mapout_9539 with [i_9540] = defunc_0_f_res_8909
+                              in {lw_dest_9541}
+                            }
+                          let {lw_dest_9537 : [cm₂_7078][cn₅_7081]f16} =
+                            mapout_9535 with [i_9536, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_map_res_8906
+                          in {lw_dest_9537}
+                        }
+                      in {defunc_0_map_res_8903}
+                    }
+                  return {returns defunc_0_f_res_8900}
+                }
+              in {defunc_0_map_res_8894}
+            } else {
+              let {defunc_0_map_res_8923 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                if <equiv> intra_suff_and_fits_8892
+                then {
+                  let {defunc_0_map_res_8924 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                    segmap(block; ; grid=nest_size_8878; blocksize=tk₁_7077)
+                    (gtid_8925 < tm₀_7076, gtid_8926 < tn₄_7080) (~phys_tblock_id_8927) : {[cm₂_7078][cn₅_7081]f16} {
+                      let {defunc_0_f_res_8932 : [cm₂_7078][cn₅_7081]f16} =
+                        segred(inblock; )
+                        (gtid_8933 < tk₁_7077) (~phys_tid_8934)
+                        ({unflatten_res_7868},
+                        ,
+                        \ {eta_p_8935 : [cm₂_7078][cn₅_7081]f16,
+                           eta_p_8936 : [cm₂_7078][cn₅_7081]f16}
+                          : {[cm₂_7078][cn₅_7081]f16} ->
+                          let {result_9542 : [cm₂_7078][cn₅_7081]f16} =
+                            scratch(f16, cm₂_7078, cn₅_7081)
+                          let {defunc_0_map_res_8937 : [cm₂_7078][cn₅_7081]f16} =
+                            loop {mapout_9543 : *[cm₂_7078][cn₅_7081]f16} = {result_9542}
+                            for i_9544:i64 < cm₂_7078 do {
+                              let {result_9546 : [cn₅_7081]f16} =
+                                scratch(f16, cn₅_7081)
+                              let {defunc_0_map_res_8940 : [cn₅_7081]f16} =
+                                loop {mapout_9547 : *[cn₅_7081]f16} = {result_9546}
+                                for i_9548:i64 < cn₅_7081 do {
+                                  let {eta_p_8941 : f16} =
+                                    eta_p_8935[i_9544, i_9548]
+                                  let {eta_p_8942 : f16} =
+                                    eta_p_8936[i_9544, i_9548]
+                                  let {defunc_0_f_res_8943 : f16} =
+                                    fadd16(eta_p_8941, eta_p_8942)
+                                  let {lw_dest_9549 : [cn₅_7081]f16} =
+                                    mapout_9547 with [i_9548] = defunc_0_f_res_8943
+                                  in {lw_dest_9549}
+                                }
+                              let {lw_dest_9545 : [cm₂_7078][cn₅_7081]f16} =
+                                mapout_9543 with [i_9544, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_map_res_8940
+                              in {lw_dest_9545}
+                            }
+                          in {defunc_0_map_res_8937})
+                        : {[cm₂_7078][cn₅_7081]f16} {
+                          let {result_9550 : [cm₂_7078][cn₅_7081]f16} =
+                            scratch(f16, cm₂_7078, cn₅_7081)
+                          let {defunc_0_map_res_8946 : [cm₂_7078][cn₅_7081]f16} =
+                            loop {mapout_9551 : *[cm₂_7078][cn₅_7081]f16} = {result_9550}
+                            for i_9552:i64 < cm₂_7078 do {
+                              let {result_9554 : [cn₅_7081]f16} =
+                                scratch(f16, cn₅_7081)
+                              let {defunc_0_map_res_8948 : [cn₅_7081]f16} =
+                                loop {mapout_9555 : *[cn₅_7081]f16} = {result_9554}
+                                for i_9556:i64 < cn₅_7081 do {
+                                  let {defunc_0_f_res_8950 : f16} =
+                                    loop {redout_9558 : f16} = {0.0f16}
+                                    for i_9559:i64 < ck₃_7079 do {
+                                      let {eta_p_8954 : f16} =
+                                        Atiles_7082[gtid_8925, gtid_8933, i_9552, i_9559]
+                                      let {eta_p_8955 : f16} =
+                                        Btiles_7083[gtid_8933, gtid_8926, i_9559, i_9556]
+                                      let {defunc_0_f_res_8956 : f16} =
+                                        fmul16(eta_p_8954, eta_p_8955)
+                                      let {defunc_0_op_res_8953 : f16} =
+                                        fadd16(defunc_0_f_res_8956, redout_9558)
+                                      in {defunc_0_op_res_8953}
+                                    }
+                                  let {lw_dest_9557 : [cn₅_7081]f16} =
+                                    mapout_9555 with [i_9556] = defunc_0_f_res_8950
+                                  in {lw_dest_9557}
+                                }
+                              let {lw_dest_9553 : [cm₂_7078][cn₅_7081]f16} =
+                                mapout_9551 with [i_9552, 0i64 :+ cn₅_7081 * 1i64] = defunc_0_map_res_8948
+                              in {lw_dest_9553}
+                            }
+                          return {returns defunc_0_map_res_8946}
+                        }
+                      return {returns defunc_0_f_res_8932}
+                    }
+                  in {defunc_0_map_res_8924}
+                } else {
+                  let {defunc_0_f_res_map_acc_r_r_8983 : [tm₀_7076][tn₄_7080][tk₁_7077][cm₂_7078][cn₅_7081]f16} =
+-- Maybe register tiled                  
+                    if <equiv> suff_outer_par_8982
+                    then {
+                      let {tk_div_tx_9124 : i64} =
+                        sdiv_up64(Tk_9123, Ty_9121)
+                      let {gridDim_x_9132 : i64} =
+                        sdiv_up64(cn₅_7081, TxRx_9126)
+                      let {gridDim_y_9133 : i64} =
+                        sdiv_up64(cm₂_7078, TxRx_9126)
+                      let {binop_y_9134 : i64} =
+                        mul_nw64(gridDim_x_9132, gridDim_y_9133)
+                      let {binop_y_9135 : i64} =
+                        mul_nw64(tk₁_7077, binop_y_9134)
+                      let {binop_y_9136 : i64} =
+                        mul_nw64(tn₄_7080, binop_y_9135)
+                      let {grid_size_9137 : i64} =
+                        mul_nw64(tm₀_7076, binop_y_9136)
+                      let {full_tiles_9169 : i64} =
+                        squot64(ck₃_7079, Tk_9123)
+                      let {kk_9327 : i64} =
+                        mul_nw64(Tk_9123, full_tiles_9169)
+                      let {defunc_0_f_res_map_acc_r_r_8984 : [tm₀_7076][tn₄_7080][tk₁_7077][cm₂_7078][cn₅_7081]f16} =
+                        segmap(block; ; grid=grid_size_9137; blocksize=tblock_size_9138)
+                        (gtid_8985 < tm₀_7076, gtid_8986 < tn₄_7080, gtid_8987 < tk₁_7077, gid_y_9139 < gridDim_y_9133, gid_x_9140 < gridDim_x_9132) (~gid_flat_9141) : {f16} {
+                          let {iii_9142 : i64} =
+                            mul_nw64(TxRx_9126, gid_y_9139)
+                          let {jjj_9143 : i64} =
+                            mul_nw64(TxRx_9126, gid_x_9140)
+                          let {cssss_9166 : [Ty_9121][Ty_9121][Ry_9122][Ry_9122]f16} =
+                            segmap(inblock; full [])
+                            (ltid_y_9156 < Ty_9121, ltid_x_9155 < Ty_9121) (~ltid_flat_9157) : {[Ry_9122][Ry_9122]f16} {
+                              let {css_init_9158 : [Ry_9122][Ry_9122]f16} =
+                                scratch(f16, Ry_9122, Ry_9122)
+                              let {loop_9159 : [Ry_9122][Ry_9122]f16} =
+                                loop {merge_9161 : *[Ry_9122][Ry_9122]f16} = {css_init_9158}
+                                for i_9160:i64 < Ry_9122 do {
+                                  let {loop_9162 : [Ry_9122][Ry_9122]f16} =
+                                    loop {merge_9164 : *[Ry_9122][Ry_9122]f16} = {merge_9161}
+                                    for i_9163:i64 < Ry_9122 do {
+                                      let {css_9165 : [Ry_9122][Ry_9122]f16} =
+                                        merge_9164 with [i_9160, i_9163] = 0.0f16
+                                      in {css_9165}
+                                    }
+                                  in {loop_9162}
+                                }
+                              return {returns (private) loop_9159}
+                            }
+                          let {A_loc_9167 : [a_loc_sz_9129]f16} =
+                            scratch(f16, a_loc_sz_9129)
+                          let {B_loc_9168 : [a_loc_sz_9129]f16} =
+                            scratch(f16, a_loc_sz_9129)
+                          let {loop_9324 : [Ty_9121][Ty_9121][Ry_9122][Ry_9122]f16,
+                               loop_9325 : [a_loc_sz_9129]f16,
+                               loop_9326 : [a_loc_sz_9129]f16} =
+                            loop {merge_9171 : *[Ty_9121][Ty_9121][Ry_9122][Ry_9122]f16,
+                                  merge_9172 : *[a_loc_sz_9129]f16,
+                                  merge_9173 : *[a_loc_sz_9129]f16} = {cssss_9166, A_loc_9167, B_loc_9168}
+                            for i_9170:i64 < full_tiles_9169 do {
+                              let {kk_9174 : i64} =
+                                mul_nw64(Tk_9123, i_9170)
+                              let {as_transformed_row_glb2loc_9215 : [a_loc_sz_9129]f16} =
+                                segmap(inblock; full [0, 1])
+                                (ltid_seq_9197 < Ry_9122, ltid_seq_9198 < tk_div_tx_9124, ltid_y_9195 < Ty_9121, ltid_x_9196 < Ty_9121) (~ltid_flat_9194) : {[a_loc_sz_9129]f16} {
+                                  let {binop_y_9199 : i64} =
+                                    mul_nw64(Ty_9121, ltid_seq_9198)
+                                  let {k_9200 : i64} =
+                                    add_nw64(ltid_x_9196, binop_y_9199)
+                                  let {binop_y_9201 : i64} =
+                                    mul_nw64(Ty_9121, ltid_seq_9197)
+                                  let {i_9202 : i64} =
+                                    add_nw64(ltid_y_9195, binop_y_9201)
+                                  let {gtid_9203 : i64} =
+                                    add_nw64(iii_9142, i_9202)
+                                  let {as_transformed_row_seqdim_idx_9204 : i64} =
+                                    add_nw64(kk_9174, k_9200)
+                                  let {cond_9205 : bool} =
+                                    slt64(gtid_9203, cm₂_7078)
+                                  let {as_transformed_row_elem_9206 : f16} =
+                                    if cond_9205
+                                    then {
+                                      let {A_elem_9208 : f16} =
+                                        Atiles_7082[gtid_8985, gtid_8987, gtid_9203, as_transformed_row_seqdim_idx_9204]
+                                      in {A_elem_9208}
+                                    } else {0.0f16}
+                                    : {f16}
+                                  let {cond_9210 : bool} =
+                                    slt64(k_9200, Tk_9123)
+                                  let {as_transformed_row_loc_ind_9211 : i64} =
+                                    if cond_9210
+                                    then {
+                                      let {binop_y_9212 : i64} =
+                                        mul_nw64(Tk_9123, i_9202)
+                                      let {x_9213 : i64} =
+                                        add_nw64(k_9200, binop_y_9212)
+                                      in {x_9213}
+                                    } else {-1i64}
+                                    : {i64}
+                                  return {merge_9172
+                                          with ([as_transformed_row_loc_ind_9211] = as_transformed_row_elem_9206)}
+                                }
+                              let {as_transformed_row_glb2loc_9256 : [a_loc_sz_9129]f16} =
+                                segmap(inblock; full [0, 1])
+                                (ltid_seq_9238 < Ry_9122, ltid_seq_9239 < tk_div_tx_9124, ltid_y_9236 < Ty_9121, ltid_x_9237 < Ty_9121) (~ltid_flat_9235) : {[a_loc_sz_9129]f16} {
+                                  let {binop_y_9240 : i64} =
+                                    mul_nw64(Ty_9121, ltid_seq_9239)
+                                  let {k_9241 : i64} =
+                                    add_nw64(ltid_y_9236, binop_y_9240)
+                                  let {binop_y_9242 : i64} =
+                                    mul_nw64(Ty_9121, ltid_seq_9238)
+                                  let {i_9243 : i64} =
+                                    add_nw64(ltid_x_9237, binop_y_9242)
+                                  let {gtid_9244 : i64} =
+                                    add_nw64(jjj_9143, i_9243)
+                                  let {as_transformed_row_seqdim_idx_9245 : i64} =
+                                    add_nw64(kk_9174, k_9241)
+                                  let {cond_9246 : bool} =
+                                    slt64(gtid_9244, cn₅_7081)
+                                  let {as_transformed_row_elem_9247 : f16} =
+                                    if cond_9246
+                                    then {
+                                      let {A_elem_9249 : f16} =
+                                        Btiles_7083[gtid_8987, gtid_8986, as_transformed_row_seqdim_idx_9245, gtid_9244]
+                                      in {A_elem_9249}
+                                    } else {0.0f16}
+                                    : {f16}
+                                  let {cond_9251 : bool} =
+                                    slt64(k_9241, Tk_9123)
+                                  let {as_transformed_row_loc_ind_9252 : i64} =
+                                    if cond_9251
+                                    then {
+                                      let {binop_y_9253 : i64} =
+                                        mul_nw64(TxRx_9126, k_9241)
+                                      let {x_9254 : i64} =
+                                        add_nw64(i_9243, binop_y_9253)
+                                      in {x_9254}
+                                    } else {-1i64}
+                                    : {i64}
+                                  return {merge_9173
+                                          with ([as_transformed_row_loc_ind_9252] = as_transformed_row_elem_9247)}
+                                }
+                              let {redomap_res_9323 : [Ty_9121][Ty_9121][Ry_9122][Ry_9122]f16} =
+                                segmap(inblock; full [])
+                                (ltid_y_9291 < Ty_9121, ltid_x_9290 < Ty_9121) (~ltid_flat_9292) : {[Ry_9122][Ry_9122]f16} {
+                                  let {css_init_9293 : [Ry_9122][Ry_9122]f16} =
+                                    merge_9171[ltid_y_9291, ltid_x_9290, 0i64 :+ Ry_9122 * 1i64, 0i64 :+ Ry_9122 * 1i64]
+                                  let {binop_x_9305 : i64} =
+                                    mul_nw64(Ry_9122, ltid_y_9291)
+                                  let {binop_y_9310 : i64} =
+                                    mul_nw64(Ry_9122, ltid_x_9290)
+                                  let {loop_9294 : [Ry_9122][Ry_9122]f16} =
+                                    loop {merge_9296 : *[Ry_9122][Ry_9122]f16} = {css_init_9293}
+                                    for i_9295:i64 < Tk_9123 do {
+                                      let {binop_y_9312 : i64} =
+                                        mul_nw64(TxRx_9126, i_9295)
+                                      let {loop_9298 : [Ry_9122][Ry_9122]f16} =
+                                        loop {merge_9300 : *[Ry_9122][Ry_9122]f16} = {merge_9296}
+                                        for i_9299:i64 < Ry_9122 do {
+                                          let {binop_x_9306 : i64} =
+                                            add_nw64(i_9299, binop_x_9305)
+                                          let {binop_y_9307 : i64} =
+                                            mul_nw64(Tk_9123, binop_x_9306)
+                                          let {as_transformed_row_loc_ind_64_9308 : i64} =
+                                            add_nw64(i_9295, binop_y_9307)
+                                          let {as_transformed_row_loc_elem_9309 : f16} =
+                                            if <fallback> loop_nonempty_9493
+                                            then {
+                                              let {x_9494 : f16} =
+                                                as_transformed_row_glb2loc_9215[as_transformed_row_loc_ind_64_9308]
+                                              in {x_9494}
+                                            } else {0.0f16}
+                                            : {f16}
+                                          let {loop_9301 : [Ry_9122][Ry_9122]f16} =
+                                            loop {merge_9303 : *[Ry_9122][Ry_9122]f16} = {merge_9300}
+                                            for i_9302:i64 < Ry_9122 do {
+                                              let {binop_x_9311 : i64} =
+                                                add_nw64(i_9302, binop_y_9310)
+                                              let {as_transformed_row_loc_ind_64_9313 : i64} =
+                                                add_nw64(binop_x_9311, binop_y_9312)
+                                              let {as_transformed_row_loc_elem_9314 : f16} =
+                                                as_transformed_row_glb2loc_9256[as_transformed_row_loc_ind_64_9313]
+                                              let {c_9315 : f16} =
+                                                merge_9303[i_9299, i_9302]
+                                              let {defunc_0_f_res_9318 : f16} =
+                                                fmul16(as_transformed_row_loc_elem_9309, as_transformed_row_loc_elem_9314)
+                                              let {defunc_0_op_res_9321 : f16} =
+                                                fadd16(c_9315, defunc_0_f_res_9318)
+                                              let {css_9322 : [Ry_9122][Ry_9122]f16} =
+                                                merge_9303 with [i_9299, i_9302] = defunc_0_op_res_9321
+                                              in {css_9322}
+                                            }
+                                          in {loop_9301}
+                                        }
+                                      in {loop_9298}
+                                    }
+                                  return {returns (private) loop_9294}
+                                }
+                              in {redomap_res_9323, as_transformed_row_glb2loc_9215, as_transformed_row_glb2loc_9256}
+                            }
+                          let {as_transformed_row_glb2loc_9372 : [a_loc_sz_9129]f16} =
+                            segmap(inblock; full [0, 1])
+                            (ltid_seq_9352 < Ry_9122, ltid_seq_9353 < tk_div_tx_9124, ltid_y_9350 < Ty_9121, ltid_x_9351 < Ty_9121) (~ltid_flat_9349) : {[a_loc_sz_9129]f16} {
+                              let {binop_y_9354 : i64} =
+                                mul_nw64(Ty_9121, ltid_seq_9353)
+                              let {k_9355 : i64} =
+                                add_nw64(ltid_x_9351, binop_y_9354)
+                              let {binop_y_9356 : i64} =
+                                mul_nw64(Ty_9121, ltid_seq_9352)
+                              let {i_9357 : i64} =
+                                add_nw64(ltid_y_9350, binop_y_9356)
+                              let {gtid_9358 : i64} =
+                                add_nw64(iii_9142, i_9357)
+                              let {as_transformed_row_seqdim_idx_9359 : i64} =
+                                add_nw64(kk_9327, k_9355)
+                              let {binop_x_9360 : bool} =
+                                slt64(gtid_9358, cm₂_7078)
+                              let {binop_y_9361 : bool} =
+                                slt64(as_transformed_row_seqdim_idx_9359, ck₃_7079)
+                              let {cond_9362 : bool} =
+                                logand(binop_x_9360, binop_y_9361)
+                              let {as_transformed_row_elem_9363 : f16} =
+                                if cond_9362
+                                then {
+                                  let {A_elem_9365 : f16} =
+                                    Atiles_7082[gtid_8985, gtid_8987, gtid_9358, as_transformed_row_seqdim_idx_9359]
+                                  in {A_elem_9365}
+                                } else {0.0f16}
+                                : {f16}
+                              let {cond_9367 : bool} =
+                                slt64(k_9355, Tk_9123)
+                              let {as_transformed_row_loc_ind_9368 : i64} =
+                                if cond_9367
+                                then {
+                                  let {binop_y_9369 : i64} =
+                                    mul_nw64(Tk_9123, i_9357)
+                                  let {x_9370 : i64} =
+                                    add_nw64(k_9355, binop_y_9369)
+                                  in {x_9370}
+                                } else {-1i64}
+                                : {i64}
+                              return {loop_9325
+                                      with ([as_transformed_row_loc_ind_9368] = as_transformed_row_elem_9363)}
+                            }
+                          let {as_transformed_row_glb2loc_9417 : [a_loc_sz_9129]f16} =
+                            segmap(inblock; full [0, 1])
+                            (ltid_seq_9397 < Ry_9122, ltid_seq_9398 < tk_div_tx_9124, ltid_y_9395 < Ty_9121, ltid_x_9396 < Ty_9121) (~ltid_flat_9394) : {[a_loc_sz_9129]f16} {
+                              let {binop_y_9399 : i64} =
+                                mul_nw64(Ty_9121, ltid_seq_9398)
+                              let {k_9400 : i64} =
+                                add_nw64(ltid_y_9395, binop_y_9399)
+                              let {binop_y_9401 : i64} =
+                                mul_nw64(Ty_9121, ltid_seq_9397)
+                              let {i_9402 : i64} =
+                                add_nw64(ltid_x_9396, binop_y_9401)
+                              let {gtid_9403 : i64} =
+                                add_nw64(jjj_9143, i_9402)
+                              let {as_transformed_row_seqdim_idx_9404 : i64} =
+                                add_nw64(kk_9327, k_9400)
+                              let {binop_x_9405 : bool} =
+                                slt64(gtid_9403, cn₅_7081)
+                              let {binop_y_9406 : bool} =
+                                slt64(as_transformed_row_seqdim_idx_9404, ck₃_7079)
+                              let {cond_9407 : bool} =
+                                logand(binop_x_9405, binop_y_9406)
+                              let {as_transformed_row_elem_9408 : f16} =
+                                if cond_9407
+                                then {
+                                  let {A_elem_9410 : f16} =
+                                    Btiles_7083[gtid_8987, gtid_8986, as_transformed_row_seqdim_idx_9404, gtid_9403]
+                                  in {A_elem_9410}
+                                } else {0.0f16}
+                                : {f16}
+                              let {cond_9412 : bool} =
+                                slt64(k_9400, Tk_9123)
+                              let {as_transformed_row_loc_ind_9413 : i64} =
+                                if cond_9412
+                                then {
+                                  let {binop_y_9414 : i64} =
+                                    mul_nw64(TxRx_9126, k_9400)
+                                  let {x_9415 : i64} =
+                                    add_nw64(i_9402, binop_y_9414)
+                                  in {x_9415}
+                                } else {-1i64}
+                                : {i64}
+                              return {loop_9326
+                                      with ([as_transformed_row_loc_ind_9413] = as_transformed_row_elem_9408)}
+                            }
+                          let {redomap_res_9488 : [Ty_9121][Ty_9121][Ry_9122][Ry_9122]f16} =
+                            segmap(inblock; full [])
+                            (ltid_y_9454 < Ty_9121, ltid_x_9453 < Ty_9121) (~ltid_flat_9455) : {[Ry_9122][Ry_9122]f16} {
+                              let {css_init_9456 : [Ry_9122][Ry_9122]f16} =
+                                loop_9324[ltid_y_9454, ltid_x_9453, 0i64 :+ Ry_9122 * 1i64, 0i64 :+ Ry_9122 * 1i64]
+                              let {loop_9457 : [Ry_9122][Ry_9122]f16} =
+                                loop {merge_9459 : *[Ry_9122][Ry_9122]f16} = {css_init_9456}
+                                for i_9458:i64 < Tk_9123 do {
+                                  let {cmpop_x_9460 : i64} =
+                                    add_nw64(kk_9327, i_9458)
+                                  let {cond_9461 : bool} =
+                                    slt64(cmpop_x_9460, ck₃_7079)
+                                  let {foo_9462 : [Ry_9122][Ry_9122]f16} =
+                                    if cond_9461
+                                    then {
+                                      let {loop_nonempty_9490 : bool} =
+                                        slt64(0i64, Ry_9122)
+                                      let {binop_x_9470 : i64} =
+                                        mul_nw64(Ry_9122, ltid_y_9454)
+                                      let {binop_y_9475 : i64} =
+                                        mul_nw64(Ry_9122, ltid_x_9453)
+                                      let {binop_y_9477 : i64} =
+                                        mul_nw64(TxRx_9126, i_9458)
+                                      let {loop_9463 : [Ry_9122][Ry_9122]f16} =
+                                        loop {merge_9465 : *[Ry_9122][Ry_9122]f16} = {merge_9459}
+                                        for i_9464:i64 < Ry_9122 do {
+                                          let {binop_x_9471 : i64} =
+                                            add_nw64(i_9464, binop_x_9470)
+                                          let {binop_y_9472 : i64} =
+                                            mul_nw64(Tk_9123, binop_x_9471)
+                                          let {as_transformed_row_loc_ind_64_9473 : i64} =
+                                            add_nw64(i_9458, binop_y_9472)
+                                          let {as_transformed_row_loc_elem_9474 : f16} =
+                                            if <fallback> loop_nonempty_9490
+                                            then {
+                                              let {x_9491 : f16} =
+                                                as_transformed_row_glb2loc_9372[as_transformed_row_loc_ind_64_9473]
+                                              in {x_9491}
+                                            } else {0.0f16}
+                                            : {f16}
+                                          let {loop_9466 : [Ry_9122][Ry_9122]f16} =
+                                            loop {merge_9468 : *[Ry_9122][Ry_9122]f16} = {merge_9465}
+                                            for i_9467:i64 < Ry_9122 do {
+                                              let {binop_x_9476 : i64} =
+                                                add_nw64(i_9467, binop_y_9475)
+                                              let {as_transformed_row_loc_ind_64_9478 : i64} =
+                                                add_nw64(binop_x_9476, binop_y_9477)
+                                              let {as_transformed_row_loc_elem_9479 : f16} =
+                                                as_transformed_row_glb2loc_9417[as_transformed_row_loc_ind_64_9478]
+                                              let {c_9480 : f16} =
+                                                merge_9468[i_9464, i_9467]
+                                              let {defunc_0_f_res_9483 : f16} =
+                                                fmul16(as_transformed_row_loc_elem_9474, as_transformed_row_loc_elem_9479)
+                                              let {defunc_0_op_res_9486 : f16} =
+                                                fadd16(c_9480, defunc_0_f_res_9483)
+                                              let {css_9487 : [Ry_9122][Ry_9122]f16} =
+                                                merge_9468 with [i_9464, i_9467] = defunc_0_op_res_9486
+                                              in {css_9487}
+                                            }
+                                          in {loop_9466}
+                                        }
+                                      in {loop_9463}
+                                    } else {merge_9459}
+                                    : {[Ry_9122][Ry_9122]f16}
+                                  in {foo_9462}
+                                }
+                              return {returns (private) loop_9457}
+                            }
+                          let {res_reshaped_9489 : [1i64][1i64][1i64][Ty_9121][Ty_9121][1i64][1i64][1i64][Ry_9122][Ry_9122]f16} =
+                            reshape([1i64][1i64][1i64][Ty_9121][Ty_9121][1i64][1i64][1i64][Ry_9122][Ry_9122], redomap_res_9488)
+                          return {blkreg_tile(tm₀_7076 / (1i64 * 1i64), tn₄_7080 / (1i64 * 1i64), tk₁_7077 / (1i64 * 1i64), cm₂_7078 / (Ty_9121 * Ry_9122), cn₅_7081 / (Ty_9121 * Ry_9122)) res_reshaped_9489}
+                        }
+                      in {defunc_0_f_res_map_acc_r_r_8984}
+                    } else {
+                      let {defunc_0_f_res_map_acc_r_r_9009 : [tm₀_7076][tn₄_7080][tk₁_7077][cm₂_7078][cn₅_7081]f16} =
+                        segred(thread; ; grid=num_tblocks_9007; blocksize=segred_tblock_size_9006)
+                        (gtid_9010 < tm₀_7076, gtid_9011 < tn₄_7080, gtid_9012 < tk₁_7077, gtid_9013 < cm₂_7078, gtid_9014 < cn₅_7081, gtid_9015 < ck₃_7079) (~phys_tid_9016)
+                        ({0.0f16},
+                        ,
+                        commutative \ {eta_p_9017 : f16,
+                                       eta_p_9018 : f16}
+                          : {f16} ->
+                          let {defunc_0_op_res_9019 : f16} =
+                            fadd16(eta_p_9017, eta_p_9018)
+                          in {defunc_0_op_res_9019})
+                        : {f16} {
+                          let {eta_p_9026 : f16} =
+                            Atiles_7082[gtid_9010, gtid_9012, gtid_9013, gtid_9015]
+                          let {eta_p_9027 : f16} =
+                            Btiles_7083[gtid_9012, gtid_9011, gtid_9015, gtid_9014]
+                          let {defunc_0_f_res_9028 : f16} =
+                            fmul16(eta_p_9026, eta_p_9027)
+                          return {returns defunc_0_f_res_9028}
+                        }
+                      in {defunc_0_f_res_map_acc_r_r_9009}
+                    }
+                    : {[tm₀_7076][tn₄_7080][tk₁_7077][cm₂_7078][cn₅_7081]f16}
+                  let {segmap_usable_groups_9070 : i64} =
+                    sdiv_up64(nest_size_9068, segmap_tblock_size_9069)
+                  let {defunc_0_map_res_9076 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                    if <equiv> suff_outer_par_9075
+                    then {
+                      let {defunc_0_map_res_9077 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                        segmap(thread; ; grid=segmap_usable_groups_9070; blocksize=segmap_tblock_size_9069)
+                        (gtid_9078 < tm₀_7076, gtid_9079 < tn₄_7080, gtid_9080 < cm₂_7078, gtid_9081 < cn₅_7081) (~phys_tid_9082) : {f16} {
+                          let {defunc_0_map_res_9085 : f16} =
+                            loop {redout_9560 : f16} = {0.0f16}
+                            for i_9561:i64 < tk₁_7077 do {
+                              let {x_9089 : f16} =
+                                defunc_0_f_res_map_acc_r_r_8983[gtid_9078, gtid_9079, i_9561, gtid_9080, gtid_9081]
+                              let {defunc_0_f_res_9088 : f16} =
+                                fadd16(x_9089, redout_9560)
+                              in {defunc_0_f_res_9088}
+                            }
+                          return {returns defunc_0_map_res_9085}
+                        }
+                      in {defunc_0_map_res_9077}
+                    } else {
+                      let {segmap_usable_groups_9095 : i64} =
+                        sdiv_up64(nest_size_9068, segmap_tblock_size_9094)
+                      let {defunc_0_map_res_9096 : [tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16} =
+                        segmap(thread; ; grid=segmap_usable_groups_9095; blocksize=segmap_tblock_size_9094)
+                        (gtid_9097 < tm₀_7076, gtid_9098 < tn₄_7080, gtid_9099 < cm₂_7078, gtid_9100 < cn₅_7081) (~phys_tid_9101) : {f16} {
+                          let {defunc_0_map_res_9104 : f16} =
+                            loop {redout_9562 : f16} = {0.0f16}
+                            for i_9563:i64 < tk₁_7077 do {
+                              let {x_9108 : f16} =
+                                defunc_0_f_res_map_acc_r_r_8983[gtid_9097, gtid_9098, i_9563, gtid_9099, gtid_9100]
+                              let {defunc_0_f_res_9107 : f16} =
+                                fadd16(x_9108, redout_9562)
+                              in {defunc_0_f_res_9107}
+                            }
+                          return {returns defunc_0_map_res_9104}
+                        }
+                      in {defunc_0_map_res_9096}
+                    }
+                    : {[tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16}
+                  in {defunc_0_map_res_9076}
+                }
+                : {[tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16}
+              in {defunc_0_map_res_8923}
+            }
+            : {[tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16}
+          in {defunc_0_map_res_8893}
+        }
+        : {[tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16}
+      in {defunc_0_map_res_9112}
+    }
+    : {[tm₀_7076][tn₄_7080][cm₂_7078][cn₅_7081]f16}
+  in {defunc_0_map_res_7942}
+}
