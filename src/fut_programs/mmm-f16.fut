@@ -24,4 +24,6 @@ let mmm [tm][tk][cm][ck][tn][cn] (Atiles: [tm][tk][cm][ck]f16) (Btiles: [tk][tn]
         ) (transpose Btiles)
     ) Atiles
 
-let main = mmm
+let main = 
+
+let example [g][w] = ...

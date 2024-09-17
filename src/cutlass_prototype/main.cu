@@ -6,7 +6,7 @@
 #include <cublas_v2.h>
 #include <helpers.cuh>
 
-#define SIZE 256
+#define SIZE 128
 
 using namespace cute;
 
@@ -154,7 +154,56 @@ Layout: Map between shapes by strides.
 */
 
 template <class TA, class TB, class TC>
-void run_mmm(
+void run_mmm_tt(
+    int m, int n, int k,
+    int ldA, int ldB, int ldC,
+    TA *A, TB *B, TC *C)
+{
+	auto prob_shape = make_shape(m, n, k);
+
+    auto strideA = make_stride(ldA, Int<1>{}); // (M, K)
+    auto strideB = make_stride(ldB, Int<1>{}); // (K, N)
+    auto strideC = make_stride(ldC, Int<1>{}); // (M, N)
+	// auto strideC = make_stride(Int<1>{}, ldC); // (M, N)
+
+	auto blockM = Int<128>{};
+	auto blockN = Int<128>{};
+	auto blockK = Int<8>{};
+	auto cta_tile = make_shape(blockM, blockN, blockK); // (BLK_M, BLK_N, BLK_K)
+
+	auto sA = make_layout(make_shape(blockM, blockK), LayoutRight{});
+	auto sB = make_layout(make_shape(blockK, blockM), LayoutRight{});
+	auto sC = make_layout(make_shape(blockM, blockN), LayoutRight{});
+
+	auto tA = make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}); //(M,K)
+	auto tB = make_layout(make_shape(Int<8>{}, Int<32>{}), LayoutRight{}); //(K, N)
+
+	auto tC = make_layout(make_shape(Int<16>{}, Int<16>{})); // m-major
+
+	cudaStream_t stream = 0;
+	dim3 dimBlock(size(tC));
+	dim3 dimGrid(size(ceil_div(m, blockM)),
+				 size(ceil_div(n, blockN)));
+
+    // 
+    (sA);
+	std::cout << "Launching kernel.\n"
+			  << "Grid: " << dimGrid
+			  << " Block: " << dimBlock
+			  << std::endl;
+	mmm_kernel_tt<<<dimGrid, dimBlock, 0, stream>>>(
+		prob_shape, cta_tile,
+		A, strideA, sA, tA,
+		B, strideB, sB, tB,
+		C, strideC, sC, tC,
+		1.0f, 0.0f);
+	cudaDeviceSynchronize();
+	gpuAssert(cudaPeekAtLastError());
+}
+
+
+template <class TA, class TB, class TC>
+void run_mmm_tn(
     int m, int n, int k,
     int ldA, int ldB, int ldC,
     TA *A, TB *B, TC *C)
@@ -164,7 +213,7 @@ void run_mmm(
 	// Make stride 1 in the reduction dimension.
 	// That way we reduce over the K dimension.
 	auto strideA = make_stride(ldA, Int<1>{}); // (M, K)
-	auto strideB = make_stride(ldB, Int<1>{}); // (N, K)
+	auto strideB = make_stride(ldB Int<1>{}); // (N, K)
 	auto strideC = make_stride(Int<1>{}, ldC); // (M, N)
 
 	// Make a threadblock of 128x128 over the output matrix.
@@ -175,9 +224,9 @@ void run_mmm(
 	auto cta_tile = make_shape(blockM, blockN, blockK); // (BLK_M, BLK_N, BLK_K)
 
 	// Make the layout for shared memory. We make it stride 1 in K and this k-major
-	auto sA = make_layout(make_shape(blockM, blockK), LayoutRight{}); 
+	auto sA = make_layout(make_shape(blockM, blockK), LayoutRight{});
 	auto sB = make_layout(make_shape(blockN, blockK), LayoutRight{});
-	auto sC = make_shape(make_shape(blockM, blockN), LayoutRight{});
+	auto sC = make_layout(make_shape(blockM, blockN), LayoutRight{});
 
 	// Define a layout of threads to do a copy to shared memory.
 	// Each tile is 128x8, and so each thread needs to copy 4x1 elements.
@@ -197,26 +246,27 @@ void run_mmm(
 			  << "Grid: " << dimGrid
 			  << " Block: " << dimBlock
 			  << std::endl;
-	mmm_kernel<<<dimGrid, dimBlock, 0, stream>>>(
+	mmm_kernel_tn<<<dimGrid, dimBlock, 0, stream>>>(
 		prob_shape, cta_tile,
 		A, strideA, sA, tA,
 		B, strideB, sB, tB,
 		C, strideC, sC, tC,
 		1.0f, 0.0f);
 	cudaDeviceSynchronize();
-	gpuAssert(cudaPeekAtLastError());	
+	gpuAssert(cudaPeekAtLastError());
 }
 
 
-int main() 
+
+int main()
 {
     int M = SIZE;
     int N = SIZE;
     int K = SIZE;
     constexpr long n_runs = 10;
     unsigned long total_ops = (double)n_runs * 2.0 * M * N *K;
-    
-    RandomMatrix<float, 2> A; 
+
+    RandomMatrix<float, 2> A;
     RandomMatrix<float, 2> B;
     RandomMatrix<float, 2> C;
 
@@ -224,14 +274,25 @@ int main()
     RandomMatrix<float, 2> B_target;
     RandomMatrix<float, 2> C_target;
 
-    A.fill_rand<float_range>(M, K); A_target.fill_from(A, M, K);
-    B.fill_rand<float_range>(K, N); B_target.fill_from(B, K, N);
-    C.fill_zeros(M, N); C_target.fill_zeros(M, N);
+    A.fill_zeros(M, K);     
+    B.fill_zeros(K, N); 
+    C.fill_zeros(M, N); 
+    auto A_ptr = A.to_cpu();
+    auto B_ptr = B.to_cpu();
+    for (int i = 0; i < M * K; i++)
+    {
+        A_ptr[i] = (float)i;
+        B_ptr[i] = 1.0f;
+    }
 
+    A_target.fill_from(A, M, K);
+    B_target.fill_from(B, K, N);
+    C_target.fill_zeros(M, N);
+    
     float *C_target_device = C_target.to_gpu();
-    float *C_device = C.to_gpu(); 
+    float *C_device = C.to_gpu();
 
-	run_mmm(
+	run_mmm_tn(
 		M, N, K,
 		SIZE, SIZE, SIZE,
 		A.to_gpu(), B.to_gpu(), C_device);
@@ -239,7 +300,7 @@ int main()
 			   C_device,
 			   C.flatSize() * sizeof(float),
 			   cudaMemcpyDeviceToHost);
-	
+
 	benchmark_cublas(1,
 					 A_target.to_gpu(), B_target.to_gpu(), C_target_device,
 					 M, N, K);
@@ -247,7 +308,7 @@ int main()
 			   C_target_device,
 			   C_target.flatSize() * sizeof(float),
 			   cudaMemcpyDeviceToHost);
-	
+
 	auto A_cpu = A.to_cpu();
 	auto B_cpu = B.to_cpu();
 	auto C_cpu = C.to_cpu();
@@ -259,15 +320,15 @@ int main()
 				  << " C: " << C_cpu[i]
 				  << " C_target: " << C_target_cpu[i]
 				  << std::endl;
-	}		    
+	}
 
 	float *C_expected = C_target.to_cpu();
-	float *C_actual = C.to_cpu();		
+	float *C_actual = C.to_cpu();
 
 	Validator validator(C.to_cpu(), C_target.to_cpu(), M * N);
 	validator.setEps(0.0005);
 	validator.validate();
-	
+
     // long time_us = benchmark_cublas(n_runs, A.to_gpu(), B.to_gpu(), C.to_gpu(), M, N, K);
     // printGFlops(time_us, total_ops);
 
