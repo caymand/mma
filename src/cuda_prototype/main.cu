@@ -4,6 +4,7 @@
 #include "helpers.cuh"
 #include "matmul-tensor-naive.cuh"
 #include "matmul-tensor.cuh"
+#include "matmul-cutlass.cuh"
 #include "cuda_fp16.h"
 #include <cassert>
 //#include <cublas.h>
@@ -24,7 +25,8 @@ enum mm_kernel {
     register_tiled,
     tensor_naive,
     tensor_optimized,
-    cublas
+    cublas,
+    cutlass_mm
 };
 
 
@@ -154,6 +156,74 @@ long int benchmark_optimized_tensor_mmm(
         kernel<<<grid, block, shared_memory_used>>>(
             A_device, B_device, C_device, m, n, k
         );
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
+}
+
+
+//// Setup params for a NT GEMM
+//template <class TA, class TB, class TC,
+//        class Alpha, class Beta>
+//void
+//gemm_nt(int m, int n, int k,
+//        Alpha alpha,
+//        TA const* A, int ldA,
+//        TB const* B, int ldB,
+//        Beta beta,
+//        TC      * C, int ldC,
+//        cudaStream_t stream = 0)
+//{
+template <typename elmT, typename elmAccT = elmT>
+long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k) {
+    using namespace cute;
+
+    // Define shapes (dynamic)
+    auto M = int(m);
+    auto N = int(n);
+    auto K = int(k);
+    auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
+
+    // Define strides (mixed)
+    auto dA = make_stride(K, Int<1>{});                      // (dM, dK)
+    auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
+    auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
+
+    // Define CTA tile sizes (static)
+    auto bM = Int<128>{};
+    auto bN = Int<128>{};
+    auto bK = Int<  8>{};
+    auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+
+    // Define the smem layouts (static)
+    auto sA = make_layout(make_shape(bM, bK));                 // (m,k) -> smem_idx; m-major
+    auto sB = make_layout(make_shape(bN, bK));                 // (n,k) -> smem_idx; n-major
+    auto sC = make_layout(make_shape(bM, bN));                 // (m,n) -> smem_idx; m-major
+
+    // Define the thread layouts (static)
+    auto tA = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (m,k) -> thr_idx
+    auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (n,k) -> thr_idx
+    auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));   // (m,n) -> thr_idx
+
+    dim3 dimBlock(size(tC));
+    dim3 dimGrid(size(ceil_div(M, bM)),
+                 size(ceil_div(N, bN)));
+
+
+    TimeMeasurement t;
+
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+        gemm_device<<<dimGrid, dimBlock, 0>>>
+                (prob_shape, cta_tiler,
+                 A, dA, sA, tA,
+                 B, dB, sB, tB,
+                 C, dC, sC, tC,
+                 1, 0);
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -419,7 +489,11 @@ void run_mmm_kernel(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
     }
-    else {
+    else if constexpr (kernel_type == mm_kernel::cutlass_mm) {
+        total_elapsed = benchmark_cutlass_mmm(
+                n_runs, A_device, B_device, C_device, m, n, k
+        );
+    } else {
         total_elapsed = benchmark_tiled_mmm<elmT, elmAccT>(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
@@ -548,9 +622,9 @@ int main(int argc, char * argv[])
         n_runs, m, n, k, A_accT, B_accT, C_target, C_target, std::string("GPU register tiled")
     );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_naive, true>(
-        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
-    );
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_naive, true>(
+//        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
+//    );
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
         n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
@@ -558,6 +632,10 @@ int main(int argc, char * argv[])
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
             n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
+    );
+
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
     );
 
     cudaFree(A.to_gpu());

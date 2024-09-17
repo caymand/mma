@@ -31,7 +31,7 @@
 
 #include <cstdint>
 #include <mma.h>
-#include "cuda_fp16.h"
+#include <cuda_fp16.h>
 
 #include <cooperative_groups.h>
 #include <cuda/barrier>
