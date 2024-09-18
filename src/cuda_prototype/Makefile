@@ -11,6 +11,10 @@ all: $(MAIN)
 run: $(MAIN)
 	./$(MAIN)
 
+profile: $(CUFILES) $(HEADERS)
+	$(CXX) $(OPTIONS) -lineinfo $(CUFILES) -o $(MAIN)
+
+
 # depends on headers and source
 $(MAIN): $(CUFILES) $(HEADERS)
 	$(CXX) $(OPTIONS) $(CUFILES) -o $(MAIN)

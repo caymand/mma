@@ -13,6 +13,129 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
+template <class ProblemShape, class CtaTiler,
+        class TA, class AStride, class ASmemLayout, class TiledCopyA,
+        class TB, class BStride, class BSmemLayout, class TiledCopyB,
+        class TC, class CStride, class CSmemLayout, class TiledMma,
+        class Alpha, class Beta>
+__global__ static
+__launch_bounds__(decltype(size(TiledMma{}))::value)
+void
+gemm_tiledMMA(ProblemShape shape_MNK, CtaTiler cta_tiler,
+            TA const* A, AStride strideGlobalA, ASmemLayout sA_layout, TiledCopyA copy_a,
+            TB const* B, BStride strideGlobalB, BSmemLayout sB_layout, TiledCopyB copy_b,
+            TC      * C, CStride strideGlobalC, CSmemLayout          , TiledMma tiled_mma,
+            Alpha alpha, Beta beta)
+{
+        using namespace cute;
+
+    // Preconditions
+    CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});                   // (M, N, K)
+    CUTE_STATIC_ASSERT_V(rank(cta_tiler) == Int<3>{});                   // (BLK_M, BLK_N, BLK_K)
+
+    CUTE_STATIC_ASSERT_V(size(copy_a) == size(copy_b));           // NumThreads
+    CUTE_STATIC_ASSERT_V(size(tiled_mma) == size(copy_a));                          // NumThreads
+
+    // NO MORE ASSERTIONS ABOUT Thread Layout and tiler. This is handled by the type
+
+    static_assert(is_static<ASmemLayout>::value);
+    static_assert(is_static<BSmemLayout>::value);
+    static_assert(is_static<CSmemLayout>::value);
+
+    CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));  // BLK_M
+    CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
+    CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
+    CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
+    CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
+    CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));  // BLK_K
+
+    CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), strideGlobalA));         // dA strides for shape MK
+    CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), strideGlobalB));         // dB strides for shape NK
+    CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), strideGlobalC));         // dC strides for shape MN
+
+    //
+    // Full and Tiled Tensors
+    //
+
+    // Represent the full tensors
+    Tensor mA = make_tensor(make_gmem_ptr(A), select<0,2>(shape_MNK), strideGlobalA); // (M,K)
+    Tensor mB = make_tensor(make_gmem_ptr(B), select<1,2>(shape_MNK), strideGlobalB); // (N,K)
+    Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), strideGlobalC); // (M,N)
+
+    // Get the appropriate blocks for this thread block
+    auto cta_coord = make_coord(blockIdx.x, blockIdx.y, _);              // (m,n,k)
+    Tensor gA = local_tile(mA, cta_tiler, cta_coord, Step<_1, X,_1>{});  // (BLK_M,BLK_K,k)
+    Tensor gB = local_tile(mB, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (BLK_N,BLK_K,k)
+    Tensor gC = local_tile(mC, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (BLK_M,BLK_N)
+
+    // Shared memory buffers
+    __shared__ TA smemA[cosize_v<ASmemLayout>];
+    __shared__ TB smemB[cosize_v<BSmemLayout>];
+    
+    Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
+    Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
+    
+    ThrCopy thr_copy_a = copy_a.get_slice(threadIdx.x);
+    ThrCopy thr_copy_b = copy_b.get_slice(threadIdx.x);
+
+    // Similar to above. Partition the source data based on the threadIdx.
+    // This will be a 8x1 or 4x1 slice depending on the data type. 
+    // in the first mode, and we then have a bunch of these slices.
+    Tensor tAgA = thr_copy_a.partition_S(gA); // (CPY, CPY_M, CPY_K, k)
+    Tensor tAsA = thr_copy_a.partition_D(sA); // (CPY, CPY_Y, CPY_K, k)
+    Tensor tArA = make_fragment_like(tAsA);
+    
+    Tensor tBgB = thr_copy_b.partition_S(gB); // (CPY, CPY_N, CPU_K, k)
+    Tensor tBsB = thr_copy_b.partition_D(sB); // (CPY, CPY_N, CPU_K, k)
+    Tensor tBrB = make_fragment_like(tBsB);
+    
+    CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tAsA));                // CPY_M
+    CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tArA));                // CPY_M
+    CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tAsA));                // CPY_K
+    CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tArA));                // CPY_K
+    CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBsB));                // CPY_N
+    CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBrB));                // CPY_N
+    CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBsB));                // CPY_K
+    CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBrB));                // CPY_K
+
+    ThrMMA thr_mma = tiled_mma.get_slice(threadIdx.x);
+    // Slice of shared need for MMA and slice of global for result.
+    // IN this case, MMA is just 1 element. Not  using tensor cores yet.
+    Tensor tCsA = thr_mma.partition_A(sA); // (MMA, MMA_M, MMA_K, K)
+    Tensor tCsB = thr_mma.partition_B(sB);
+    Tensor tCgC = thr_mma.partition_C(gC);
+    Tensor tCrC = thr_mma.make_fragment_C(tCgC);
+
+    CUTE_STATIC_ASSERT_V(  shape(tCrC) ==   shape(tCgC));                // (MMA,MMA_M,MMA_N)
+    CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCsA));                // MMA_M
+    CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCsB));                // MMA_N
+    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                // MMA_K
+
+    // Clear the accumulators
+    clear(tCrC);
+    // NOTE: tAgA is 4D because we have (CPY, CPY_M, CPY_K, k);
+    auto K_TILE_MAX = size<3>(tAgA);
+    copy(copy_a, tAgA(_, _,_, 0), tArA);        
+    copy(copy_b, tBgB(_, _,_, 0), tBrB);
+
+    for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
+    {
+        __syncthreads();                
+        // Copy global->registers for next iteration for next iteration        
+        copy(tArA, tAsA);        
+        copy(tBrB, tBsB);                
+        __syncthreads();         // Wait for all threads to write to smem
+        // Initiate copy for next operation
+        int k_tile_next = (k_tile + 1 < K_TILE_MAX) ? k_tile + 1 : k_tile;
+        copy(copy_a, tAgA(_, _,_, k_tile_next), tArA);        
+        copy(copy_b, tBgB(_, _,_, k_tile_next), tBrB);
+
+        // Compute gemm on tC thread-partitioned smem
+        gemm(tiled_mma, tCsA, tCsB, tCrC);            // (THR_M,THR_N) += (THR_M,BLK_K) * (THR_N,BLK_K)
+        
+    }
+    axpby(alpha, tCrC, beta, tCgC);
+}
 
 
 
@@ -25,9 +148,9 @@ __global__ static
 __launch_bounds__(decltype(size(CThreadLayout{}))::value)
 void
 gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
-            TA const* A, AStride dA, ASmemLayout sA_layout, AThreadLayout tA,
-            TB const* B, BStride dB, BSmemLayout sB_layout, BThreadLayout tB,
-            TC      * C, CStride dC, CSmemLayout          , CThreadLayout tC,
+            TA const* A, AStride strideGlobalA, ASmemLayout sA_layout, AThreadLayout tA,
+            TB const* B, BStride strideGlobalB, BSmemLayout sB_layout, BThreadLayout tB,
+            TC      * C, CStride strideGlobalC, CSmemLayout          , CThreadLayout tC,
             Alpha alpha, Beta beta)
 {
     using namespace cute;
@@ -61,18 +184,18 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
     CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));  // BLK_K
 
-    CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), dA));         // dA strides for shape MK
-    CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), dB));         // dB strides for shape NK
-    CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), dC));         // dC strides for shape MN
+    CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), strideGlobalA));         // dA strides for shape MK
+    CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), strideGlobalB));         // dB strides for shape NK
+    CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), strideGlobalC));         // dC strides for shape MN
 
     //
     // Full and Tiled Tensors
     //
 
     // Represent the full tensors
-    Tensor mA = make_tensor(make_gmem_ptr(A), select<0,2>(shape_MNK), dA); // (M,K)
-    Tensor mB = make_tensor(make_gmem_ptr(B), select<1,2>(shape_MNK), dB); // (N,K)
-    Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), dC); // (M,N)
+    Tensor mA = make_tensor(make_gmem_ptr(A), select<0,2>(shape_MNK), strideGlobalA); // (M,K)
+    Tensor mB = make_tensor(make_gmem_ptr(B), select<1,2>(shape_MNK), strideGlobalB); // (N,K)
+    Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), strideGlobalC); // (M,N)
 
     // Get the appropriate blocks for this thread block
     auto cta_coord = make_coord(blockIdx.x, blockIdx.y, _);              // (m,n,k)
@@ -83,18 +206,15 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     // Shared memory buffers
     __shared__ TA smemA[cosize_v<ASmemLayout>];
     __shared__ TB smemB[cosize_v<BSmemLayout>];
+    // if (thread0())
+    // {
+    //     printf("A: %d, B: %d\n", cosize_v<ASmemLayout>, cosize_v<BSmemLayout>);
+    // }
     Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
     Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
 
-    //
-    // Partition the copying of A and B tiles across the threads
-    //
-
-    // TUTORIAL: Example of simple raked partitioning of ThreadLayouts tA|tB over data A|B tiles
-
     Tensor tAgA = local_partition(gA, tA, threadIdx.x);                  // (THR_M,THR_K,k)
     Tensor tAsA = local_partition(sA, tA, threadIdx.x);                  // (THR_M,THR_K)
-
     Tensor tBgB = local_partition(gB, tB, threadIdx.x);                  // (THR_N,THR_K,k)
     Tensor tBsB = local_partition(sB, tB, threadIdx.x);                  // (THR_N,THR_K)
 

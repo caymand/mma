@@ -29,16 +29,23 @@ enum mm_kernel {
     cutlass_mm
 };
 
+enum cutlass_version
+{
+    DEFAULT,
+    PADDING,
+    VECTORIZED
+};
+
 
 template <typename elmT, typename elmAccT = elmT>
 long int benchmark_optimized_tensor_mmm(
-        int n_runs,
-        elmT *A_device,
-        elmT *B_device,
-        elmAccT *C_device,
-        int m,
-        int n,
-        int k)
+    int n_runs,
+    elmT *A_device,
+    elmT *B_device,
+    elmAccT *C_device,
+    int m,
+    int n,
+    int k)
 {
 
 // Set constants using compiler options
@@ -155,7 +162,7 @@ long int benchmark_optimized_tensor_mmm(
 //        TODO: fix requested amount of shared memory
         kernel<<<grid, block, shared_memory_used>>>(
             A_device, B_device, C_device, m, n, k
-        );
+            );
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -166,20 +173,143 @@ long int benchmark_optimized_tensor_mmm(
 }
 
 
-//// Setup params for a NT GEMM
-//template <class TA, class TB, class TC,
-//        class Alpha, class Beta>
-//void
-//gemm_nt(int m, int n, int k,
-//        Alpha alpha,
-//        TA const* A, int ldA,
-//        TB const* B, int ldB,
-//        Beta beta,
-//        TC      * C, int ldC,
-//        cudaStream_t stream = 0)
-//{
 template <typename elmT, typename elmAccT = elmT>
-long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k) {
+long int cutlass_vectorized_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k) {
+   using namespace cute;   
+
+    // Define shapes (dynamic)
+    auto M = int(m);
+    auto N = int(n);
+    auto K = int(k);
+    auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
+
+    // Define strides (mixed)
+    auto strideGlobalA = make_stride(K, Int<1>{});                      // (dM, dK)
+    auto strideGlobalB = make_stride(Int<1>{}, N);                      // (dN, dK)
+    auto strideGlobalC = make_stride(N, Int<1>{});                      // (dM, dN)
+
+    // Define CTA tile sizes (static)
+    auto bM = Int<128>{};
+    auto bN = Int<128>{};
+    auto bK = Int<  8>{};
+    auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+
+    // Define the smem layouts (static)
+    // Store A in shared M-major. We also pad the stride by 1
+    auto sA = make_layout(make_shape(bM, bK),
+                          make_stride(Int<1>{}, bM + Int<1>{})); // Store result M-major                     
+    auto sB = make_layout(make_shape(bN, bK),
+                          make_stride(Int<1>{}, bN + Int<1>{}));
+    auto sC = make_layout(make_shape(bM, bN));                 // (m,n) -> smem_idx; m-major
+
+
+    // Define the thread layouts (static)
+    auto tA = make_layout(make_shape(Int<32>{}, Int< 8>{}), make_stride(Int<8>{}, Int<8>{}));   // (m,k) -> thr_idx
+    auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}), make_stride(Int<8>{}, Int<8>{}));   // (n,k) -> thr_idx
+    auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));   // (m,n) -> thr_idx
+
+    constexpr int dtype_size = sizeof(elmT);
+    constexpr auto elms_per_load = Int<128>{} / Int<dtype_size>{};
+    // We have 8 threads in the x direction. Each thread does vectorized loads
+    // and copies a elms_per_load x 
+    // This is then done 32 times.
+    TiledCopy copyA = make_tiled_copy(Copy_Atom<UniversalCopy<elmT>, elmT>{},
+                                      Layout<Shape<_32, _8>, Stride<_8, _1>>{},
+                                      Layout<Shape<_1, _1>>{});
+    print_latex(copyA);
+    TiledCopy copyB = make_tiled_copy(Copy_Atom<UniversalCopy<elmT>, elmT>{},
+                                      Layout<Shape<_32, _8>, Stride<_8, _1>>{},
+                                      Layout<Shape<_1, _1>>{});
+    // Each thread computes a 128/16 x 128/16 = 8x8 tile.
+    TiledMMA mmaC = make_tiled_mma(UniversalFMA<elmAccT, elmT, elmT>{},
+                                   Layout<Shape<_16, _16, _1>>{});
+
+    dim3 dimBlock(size(mmaC));
+    dim3 dimGrid(size(ceil_div(M, bM)),
+                 size(ceil_div(N, bN)));
+
+    TimeMeasurement t;
+
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+        gemm_tiledMMA<<<dimGrid, dimBlock, 0>>>
+        (prob_shape, cta_tiler,
+           A, strideGlobalA, sA, copyA,
+           B, strideGlobalB, sB, copyB,
+           C, strideGlobalC, sC, mmaC,
+           1, 0);
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
+}
+
+template <typename elmT, typename elmAccT = elmT>
+long int cutlass_spadding_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k) {
+    using namespace cute;
+
+    // Define shapes (dynamic)
+    auto M = int(m);
+    auto N = int(n);
+    auto K = int(k);
+    auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
+
+    // Define strides (mixed)
+    auto strideGlobalA = make_stride(K, Int<1>{});                      // (dM, dK)
+    auto strideGlobalB = make_stride(Int<1>{}, N);                      // (dN, dK)
+    auto strideGlobalC = make_stride(N, Int<1>{});                      // (dM, dN)
+
+    // Define CTA tile sizes (static)
+    auto bM = Int<128>{};
+    auto bN = Int<128>{};
+    auto bK = Int<  8>{};
+    auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+
+    // Define the smem layouts (static)
+    // Store A in shared M-major. We also pad the stride by 1
+    auto sA = make_layout(make_shape(bM, bK),
+                          make_stride(Int<1>{}, bM + Int<1>{})); // Store result M-major                     
+    auto sB = make_layout(make_shape(bN, bK),
+                          make_stride(Int<1>{}, bN + Int<1>{}));
+    auto sC = make_layout(make_shape(bM, bN));                 // (m,n) -> smem_idx; m-major
+
+    // if (n_runs == 1) { print_latex(sA); }
+
+    // Define the thread layouts (static)
+    auto tA = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (m,k) -> thr_idx
+    auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (n,k) -> thr_idx
+    auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));   // (m,n) -> thr_idx
+
+    dim3 dimBlock(size(tC));
+    dim3 dimGrid(size(ceil_div(M, bM)),
+       size(ceil_div(N, bN)));
+
+
+    TimeMeasurement t;
+
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+        gemm_device<<<dimGrid, dimBlock, 0>>>
+        (prob_shape, cta_tiler,
+           A, strideGlobalA, sA, tA,
+           B, strideGlobalB, sB, tB,
+           C, strideGlobalC, sC, tC,
+           1, 0);
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
+}
+
+
+template <typename elmT, typename elmAccT = elmT>
+long int cutlass_default_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k) {
     using namespace cute;
 
     // Define shapes (dynamic)
@@ -211,19 +341,18 @@ long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int 
 
     dim3 dimBlock(size(tC));
     dim3 dimGrid(size(ceil_div(M, bM)),
-                 size(ceil_div(N, bN)));
-
+       size(ceil_div(N, bN)));
 
     TimeMeasurement t;
 
     t.start();
     for (int i = 0; i < n_runs; i++) {
         gemm_device<<<dimGrid, dimBlock, 0>>>
-                (prob_shape, cta_tiler,
-                 A, dA, sA, tA,
-                 B, dB, sB, tB,
-                 C, dC, sC, tC,
-                 1, 0);
+        (prob_shape, cta_tiler,
+           A, dA, sA, tA,
+           B, dB, sB, tB,
+           C, dC, sC, tC,
+           1, 0);
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -233,16 +362,30 @@ long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int 
     return t.elapsed();
 }
 
+template <cutlass_version cutlass_mmm, typename elmT, typename elmAccT = elmT>
+long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k)
+{
+    switch (cutlass_mmm)
+    {
+    case DEFAULT : 
+        return cutlass_default_mmm(n_runs, A, B, C, m, n, k);     
+    case PADDING:
+        return cutlass_spadding_mmm(n_runs, A, B, C, m, n, k);
+    case VECTORIZED : 
+        return cutlass_vectorized_mmm(n_runs, A, B, C, m, n, k);
+    default: return -1;
+    }
+}
 
 template <typename elmT, typename elmAccT = elmT>
 unsigned benchmark_naive_tensor_mmm(
-        unsigned n_runs,
-        elmT *A_device,
-        elmT *B_device,
-        elmAccT *ResMat_device,
-        int m,
-        int n,
-        int k)
+    unsigned n_runs,
+    elmT *A_device,
+    elmT *B_device,
+    elmAccT *ResMat_device,
+    int m,
+    int n,
+    int k)
 {
     constexpr int block_tiles_m = 8;
     constexpr int block_tiles_n = 4;
@@ -272,8 +415,8 @@ unsigned benchmark_naive_tensor_mmm(
     t.start();
     for (int i = 0; i < n_runs; i++) {
         matMulTiledTensorNaive<
-            elmAccT, elmT, wmma_m, wmma_n, wmma_k, block_tiles_m, block_tiles_n, block_tiles_k>
-            <<<grid, block>>>(A_device, B_device, ResMat_device, m, n, n);
+        elmAccT, elmT, wmma_m, wmma_n, wmma_k, block_tiles_m, block_tiles_n, block_tiles_k>
+        <<<grid, block>>>(A_device, B_device, ResMat_device, m, n, n);
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -286,13 +429,13 @@ unsigned benchmark_naive_tensor_mmm(
 
 template <typename elmT, typename elmAccT>
 long int benchmark_tiled_mmm(
-        int n_runs,
-        elmT *A_device,
-        elmT *B_device,
-        elmAccT *C_device,
-        int m,
-        int n,
-        int k)
+    int n_runs,
+    elmT *A_device,
+    elmT *B_device,
+    elmAccT *C_device,
+    int m,
+    int n,
+    int k)
 {
     constexpr int tile_size = 16;
     constexpr int reg_size = 5;
@@ -306,7 +449,7 @@ long int benchmark_tiled_mmm(
     t.start();
     for (int i = 0; i < n_runs; i++) {
         matMulTiled<elmT, elmAccT, tile_size, reg_size, tile_size, reg_size, tile_size><<<grid, block>>>(
-                A_device, B_device, C_device, m, n, k);
+            A_device, B_device, C_device, m, n, k);
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -318,102 +461,102 @@ long int benchmark_tiled_mmm(
 
 template <typename elmT, typename elmAccT>
 cublasStatus_t cublas_wrapper(
-        cublasHandle_t handle,
-        cublasOperation_t transa, cublasOperation_t transb,
-        int m, int n, int k,
-        const elmAccT *alpha,
-        const elmT *A, int lda,
-        const elmT *B, int ldb,
-        const elmAccT *beta,
-        elmAccT *C, int ldc
-);
+    cublasHandle_t handle,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
+    const elmAccT *alpha,
+    const elmT *A, int lda,
+    const elmT *B, int ldb,
+    const elmAccT *beta,
+    elmAccT *C, int ldc
+    );
 
 template <>
 cublasStatus_t cublas_wrapper<half, half>(
-        cublasHandle_t handle,
-        cublasOperation_t transa, cublasOperation_t transb,
-        int m, int n, int k,
-        const half *alpha,
-        const half *A, int lda,
-        const half *B, int ldb,
-        const half *beta,
-        half *C, int ldc
-) {
+    cublasHandle_t handle,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
+    const half *alpha,
+    const half *A, int lda,
+    const half *B, int ldb,
+    const half *beta,
+    half *C, int ldc
+    ) {
     return cublasGemmEx(
-            handle,
-            transa, transb,
-            m, n, k,
-            alpha,
-            A, CUDA_R_16F, lda,
-            B, CUDA_R_16F, ldb,
-            beta,
-            C, CUDA_R_16F, ldc,
-            CUDA_R_16F,
-            CUBLAS_GEMM_DEFAULT_TENSOR_OP
-    );
+        handle,
+        transa, transb,
+        m, n, k,
+        alpha,
+        A, CUDA_R_16F, lda,
+        B, CUDA_R_16F, ldb,
+        beta,
+        C, CUDA_R_16F, ldc,
+        CUDA_R_16F,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP
+        );
 }
 
 template <>
 cublasStatus_t cublas_wrapper<float, float>(
-        cublasHandle_t handle,
-        cublasOperation_t transa, cublasOperation_t transb,
-        int m, int n, int k,
-        const float *alpha,
-        const float *A, int lda,
-        const float *B, int ldb,
-        const float *beta,
-        float *C, int ldc
-) {
+    cublasHandle_t handle,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
+    const float *alpha,
+    const float *A, int lda,
+    const float *B, int ldb,
+    const float *beta,
+    float *C, int ldc
+    ) {
     return cublasGemmEx(
-            handle,
-            transa, transb,
-            m, n, k,
-            alpha,
-            A, CUDA_R_32F, lda,
-            B, CUDA_R_32F, ldb,
-            beta,
-            C, CUDA_R_32F, ldc,
-            CUDA_R_32F,
-            CUBLAS_GEMM_DEFAULT_TENSOR_OP
-    );
+        handle,
+        transa, transb,
+        m, n, k,
+        alpha,
+        A, CUDA_R_32F, lda,
+        B, CUDA_R_32F, ldb,
+        beta,
+        C, CUDA_R_32F, ldc,
+        CUDA_R_32F,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP
+        );
 }
 
 
 template <>
 cublasStatus_t cublas_wrapper<half, float>(
-        cublasHandle_t handle,
-        cublasOperation_t transa, cublasOperation_t transb,
-        int m, int n, int k,
-        const float *alpha,
-        const half *A, int lda,
-        const half *B, int ldb,
-        const float *beta,
-        float *C, int ldc
-) {
+    cublasHandle_t handle,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
+    const float *alpha,
+    const half *A, int lda,
+    const half *B, int ldb,
+    const float *beta,
+    float *C, int ldc
+    ) {
     return cublasGemmEx(
-            handle,
-            transa, transb,
-            m, n, k,
-            alpha,
-            A, CUDA_R_16F, lda,
-            B, CUDA_R_16F, ldb,
-            beta,
-            C, CUDA_R_32F, ldc,
-            CUDA_R_32F,
-            CUBLAS_GEMM_DEFAULT_TENSOR_OP
-    );
+        handle,
+        transa, transb,
+        m, n, k,
+        alpha,
+        A, CUDA_R_16F, lda,
+        B, CUDA_R_16F, ldb,
+        beta,
+        C, CUDA_R_32F, ldc,
+        CUDA_R_32F,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP
+        );
 }
 
 
 template <typename elmT, typename elmAccT>
 long int benchmark_cublas(
-        int n_runs,
-        elmT *A_device,
-        elmT *B_device,
-        elmAccT *C_device,
-        int m,
-        int n,
-        int k)
+    int n_runs,
+    elmT *A_device,
+    elmT *B_device,
+    elmAccT *C_device,
+    int m,
+    int n,
+    int k)
 {
     TimeMeasurement t;
 
@@ -437,7 +580,7 @@ long int benchmark_cublas(
             A_device, k,
             &beta,
             C_device, n
-        );
+            );
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -458,13 +601,13 @@ long int benchmark_cublas(
 // Expects A to have shape K x K and B to have K x N
 template <typename elmT, typename elmAccT, int MatDim, mm_kernel kernel_type>
 void run_mmm_kernel(
-        int n_runs,
-        int m,
-        int n,
-        int k,
-        RandomMatrix<elmT, MatDim> &A,
-        RandomMatrix<elmT, MatDim> &B,
-        RandomMatrix<elmAccT, MatDim> &C)
+    int n_runs,
+    int m,
+    int n,
+    int k,
+    RandomMatrix<elmT, MatDim> &A,
+    RandomMatrix<elmT, MatDim> &B,
+    RandomMatrix<elmAccT, MatDim> &C)
 {
     double total_ops = 2.0f * n * k * m;
 
@@ -476,27 +619,27 @@ void run_mmm_kernel(
 
     if constexpr (kernel_type == mm_kernel::tensor_optimized) {
         total_elapsed = benchmark_optimized_tensor_mmm<elmT, elmAccT>(
-                n_runs, A_device, B_device, C_device, m, n, k
-        );
+            n_runs, A_device, B_device, C_device, m, n, k
+            );
     }
     else if constexpr (kernel_type == mm_kernel::tensor_naive) {
         total_elapsed = benchmark_naive_tensor_mmm<elmT, elmAccT>(
-                n_runs, A_device, B_device, C_device, m, n, k
-        );
+            n_runs, A_device, B_device, C_device, m, n, k
+            );
     }
     else if constexpr (kernel_type == mm_kernel::cublas) {
         total_elapsed = benchmark_cublas<elmT, elmAccT>(
-                n_runs, A_device, B_device, C_device, m, n, k
-        );
+            n_runs, A_device, B_device, C_device, m, n, k
+            );
     }
     else if constexpr (kernel_type == mm_kernel::cutlass_mm) {
-        total_elapsed = benchmark_cutlass_mmm(
-                n_runs, A_device, B_device, C_device, m, n, k
-        );
+        total_elapsed = benchmark_cutlass_mmm<cutlass_version::VECTORIZED>(
+            n_runs, A_device, B_device, C_device, m, n, k
+            );
     } else {
         total_elapsed = benchmark_tiled_mmm<elmT, elmAccT>(
-                n_runs, A_device, B_device, C_device, m, n, k
-        );
+            n_runs, A_device, B_device, C_device, m, n, k
+            );
     }
 
     cudaMemcpy(C.to_cpu(), C_device, C.flatSize() * sizeof(elmAccT), cudaMemcpyDeviceToHost);
@@ -515,15 +658,15 @@ void run_mmm_kernel(
 // Expects A to have shape K x K and B to have K x N
 template <typename elmT, typename accT, int MatDim, mm_kernel kernel_type, bool validate>
 void benchmark_kernel(
-        int n_runs,
-        int m,
-        int n,
-        int k,
-        RandomMatrix<elmT, MatDim> &A,
-        RandomMatrix<elmT, MatDim> &B,
-        RandomMatrix<accT, MatDim> &C,
-        RandomMatrix<accT, MatDim> &C_target,
-        std::string kernel_name
+    int n_runs,
+    int m,
+    int n,
+    int k,
+    RandomMatrix<elmT, MatDim> &A,
+    RandomMatrix<elmT, MatDim> &B,
+    RandomMatrix<accT, MatDim> &C,
+    RandomMatrix<accT, MatDim> &C_target,
+    std::string kernel_name
     ) {
     C.fill_zeros(m, n);
 
@@ -531,8 +674,8 @@ void benchmark_kernel(
     std::cout << "Running " << kernel_name << std::endl;
     std::cout << "Dry run" << std::endl;
     run_mmm_kernel<elmT, accT, MatDim, kernel_type>(
-            1, m, n, k, A, B, C
-    );
+        1, m, n, k, A, B, C
+        );
 
     RandomMatrix<accT, MatDim> C_actual;
 
@@ -542,8 +685,8 @@ void benchmark_kernel(
 
     std::cout << "Average run after: " << n_runs << " runs"<< std::endl;
     run_mmm_kernel<elmT, accT, MatDim, kernel_type>(
-            n_runs, m, n, k, A, B, C
-    );
+        n_runs, m, n, k, A, B, C
+        );
     std::cout << "-----" << std::endl;
 
     if constexpr (validate)
@@ -620,7 +763,7 @@ int main(int argc, char * argv[])
 
     benchmark_kernel<acc_type, acc_type, 2, mm_kernel::register_tiled, false>(
         n_runs, m, n, k, A_accT, B_accT, C_target, C_target, std::string("GPU register tiled")
-    );
+        );
 
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_naive, true>(
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
@@ -628,15 +771,15 @@ int main(int argc, char * argv[])
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
         n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
-    );
+        );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
-    );
+        // benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
+        //         n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
+        // );
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
-    );
+        n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
+        );
 
     cudaFree(A.to_gpu());
     cudaFree(B.to_gpu());
