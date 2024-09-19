@@ -7,7 +7,6 @@
 
 #include <cuda_runtime.h>
 #include <cstdarg>
-#include "cutlass/detail/helper_macros.hpp"
 
 
 // TODO: Remove?
