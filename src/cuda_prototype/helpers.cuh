@@ -10,17 +10,15 @@
 #include "cutlass/detail/helper_macros.hpp"
 
 
-// TODO: check this
-CUTLASS_HOST_DEVICE
-float operator+(half const& lhs, float const& rhs) {
-    return __half2float(lhs) + rhs;
-}
-
-
-CUTLASS_HOST_DEVICE
-float operator+(float const& lhs, half const& rhs) {
-    return lhs + __half2float(rhs);
-}
+// TODO: Remove?
+//CUTLASS_HOST_DEVICE
+//float operator+(half const& lhs, float const& rhs) {
+//    return __half2float(lhs) + rhs;
+//}
+//CUTLASS_HOST_DEVICE
+//float operator+(float const& lhs, half const& rhs) {
+//    return lhs + __half2float(rhs);
+//}
 
 
 constexpr int float_range = RAND_MAX ;

@@ -5,7 +5,8 @@
 #include "matmul-tensor-naive.cuh"
 #include "matmul-tensor.cuh"
 #include "matmul-cutlass.cuh"
-#include "cuda_fp16.h"
+//#include "cuda_fp16.h"
+#include "cutlass/half.h"
 #include <cassert>
 //#include <cublas.h>
 #include <cublas_v2.h>
@@ -20,6 +21,7 @@
 #define SHARED_PADDING 8
 #endif
 
+using namespace cute;
 
 enum mm_kernel {
     register_tiled,
@@ -40,7 +42,6 @@ long int benchmark_optimized_tensor_mmm(
         int n,
         int k)
 {
-
 // Set constants using compiler options
 #ifdef WMMA_M
     constexpr int wmma_m = WMMA_M;
@@ -178,10 +179,13 @@ long int benchmark_optimized_tensor_mmm(
 //        TC      * C, int ldC,
 //        cudaStream_t stream = 0)
 //{
+// TODO: generalize to any elm types
 template <typename elmT, typename elmAccT = elmT>
-long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k) {
-    using namespace cute;
+long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
 
+// TODO: base on TN to match tensor cores?
+template<>
+long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
     // Define shapes (dynamic)
     auto M = int(m);
     auto N = int(n);
@@ -194,36 +198,54 @@ long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int 
     auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
 
     // Define CTA tile sizes (static)
+//    TODO: get from calculation
     auto bM = Int<128>{};
     auto bN = Int<128>{};
-    auto bK = Int<  8>{};
+    auto bK = Int<16>{};
     auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+    auto bP = Int<3>{};  // Pipeline
+
+    auto sA_buffer = make_layout(make_shape(bM, bK), make_stride(bK + Int<8>{}, Int<1>{}));
+    auto sB_buffer = make_layout(make_shape(bN, bK), make_stride(Int<1>{}, bN + Int<8>{}));
 
     // Define the smem layouts (static)
-    auto sA = make_layout(make_shape(bM, bK));                 // (m,k) -> smem_idx; m-major
-    auto sB = make_layout(make_shape(bN, bK));                 // (n,k) -> smem_idx; n-major
-    auto sC = make_layout(make_shape(bM, bN));                 // (m,n) -> smem_idx; m-major
+//    auto sA = make_layout(make_shape(bM, bK, bP), make_stride(bK, Int<1>{}));
+//    auto sB = make_layout(make_shape(bK, bN, bP), LayoutRight{});
+    auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK, bP));
+    auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK, bP));
+    auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
+//    TODO: calculate layouts based on size of elements
     // Define the thread layouts (static)
-    auto tA = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (m,k) -> thr_idx
-    auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (n,k) -> thr_idx
-    auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));   // (m,n) -> thr_idx
+//    TODO try other cache and Zfill
+    TiledCopy copyA = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
+        // TODO: calculate instead
+        Layout<Shape<_128, _2>, Stride<_2, _1>>{},
+        Layout<Shape<_1, _8>, Stride<_8, _1>>{}
+    );
+    TiledCopy copyB = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
+        Layout<Shape<_16, _16>, Stride<_16, _1>>{},
+        Layout<Shape<_8, _1>, Stride<_1, _8>>{}
+    );
 
-    dim3 dimBlock(size(tC));
-    dim3 dimGrid(size(ceil_div(M, bM)),
-                 size(ceil_div(N, bN)));
+    TiledMMA mmaC = make_tiled_mma(
+            SM80_16x8x16_F32BF16BF16F32_TN{},
+            Layout<Shape<_2,_4>, Stride<_4, _1>>{},
+            Tile<_32, _32, _16>{}
+    );
 
+    dim3 dimBlock(size(mmaC));
+    dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
     TimeMeasurement t;
-
     t.start();
     for (int i = 0; i < n_runs; i++) {
-        gemm_device<<<dimGrid, dimBlock, 0>>>
-                (prob_shape, cta_tiler,
-                 A, dA, sA, tA,
-                 B, dB, sB, tB,
-                 C, dC, sC, tC,
-                 1, 0);
+        gemm_device<<<dimGrid, dimBlock, 0>>>(
+            prob_shape, cta_tiler,
+            A, dA, sA, copyA,
+            B, dB, sB, copyB,
+            C, dC, sC, mmaC,
+            Int<1>{}, Int<0>{});
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -329,15 +351,15 @@ cublasStatus_t cublas_wrapper(
 );
 
 template <>
-cublasStatus_t cublas_wrapper<half, half>(
+cublasStatus_t cublas_wrapper<half_t, half_t>(
         cublasHandle_t handle,
         cublasOperation_t transa, cublasOperation_t transb,
         int m, int n, int k,
-        const half *alpha,
-        const half *A, int lda,
-        const half *B, int ldb,
-        const half *beta,
-        half *C, int ldc
+        const half_t *alpha,
+        const half_t *A, int lda,
+        const half_t *B, int ldb,
+        const half_t *beta,
+        half_t *C, int ldc
 ) {
     return cublasGemmEx(
             handle,
@@ -380,13 +402,13 @@ cublasStatus_t cublas_wrapper<float, float>(
 
 
 template <>
-cublasStatus_t cublas_wrapper<half, float>(
+cublasStatus_t cublas_wrapper<half_t, float>(
         cublasHandle_t handle,
         cublasOperation_t transa, cublasOperation_t transb,
         int m, int n, int k,
         const float *alpha,
-        const half *A, int lda,
-        const half *B, int ldb,
+        const half_t *A, int lda,
+        const half_t *B, int ldb,
         const float *beta,
         float *C, int ldc
 ) {
@@ -560,7 +582,7 @@ void benchmark_kernel(
 #ifdef ELM_T
 typedef ELM_T element_type;
 #else
-typedef half element_type;
+typedef half_t element_type;
 #endif
 
 #ifdef ACC_T
@@ -622,6 +644,7 @@ int main(int argc, char * argv[])
         n_runs, m, n, k, A_accT, B_accT, C_target, C_target, std::string("GPU register tiled")
     );
 
+    // TODO: make this work for Cutlass half, or cast?
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_naive, true>(
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
 //    );
