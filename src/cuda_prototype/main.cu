@@ -21,7 +21,8 @@
 #define SHARED_PADDING 8
 #endif
 
-using namespace cute;
+typedef cutlass::half_t half_t;
+
 
 enum mm_kernel {
     register_tiled,
@@ -186,6 +187,8 @@ long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int 
 // TODO: base on TN to match tensor cores?
 template<>
 long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
+    using namespace cute;
+
     // Define shapes (dynamic)
     auto M = int(m);
     auto N = int(n);
@@ -218,21 +221,39 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
 //    TODO: calculate layouts based on size of elements
     // Define the thread layouts (static)
 //    TODO try other cache and Zfill
-    TiledCopy copyA = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
+    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
         // TODO: calculate instead
         Layout<Shape<_128, _2>, Stride<_2, _1>>{},
         Layout<Shape<_1, _8>, Stride<_8, _1>>{}
     );
-    TiledCopy copyB = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
+    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
         Layout<Shape<_16, _16>, Stride<_16, _1>>{},
         Layout<Shape<_8, _1>, Stride<_1, _8>>{}
     );
 
+//    TiledMMA mmaC = make_tiled_mma(UniversalFMA<float,half_t,half_t>{},
+//        Layout<Shape<_16,_16,_1>>{} // 16x16x1 TiledMMA
+//    );
+
     TiledMMA mmaC = make_tiled_mma(
-            SM80_16x8x16_F32BF16BF16F32_TN{},
-            Layout<Shape<_2,_4>, Stride<_4, _1>>{},
-            Tile<_32, _32, _16>{}
+            MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
+//            Layout<Shape<_2,_4,_1>>{}
+//            Layout<Shape<_2,_4,_1>, Stride<_4,_1,_8>>{},
+//            Tile<_32, _32, _16>{}
+//            Layout<Shape<_1,_1>>{},
+//            Tile<_32, _32, _16>{}
+            Layout<Shape<_2,_4,_1>>{},
+            Tile<_128, _128, _16>{}
     );
+
+    TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<UniversalCopy<half_t>, half_t>{}, mmaC);
+    TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<UniversalCopy<half_t>, half_t>{}, mmaC);
+//    TODO: handle C in same way
+
+//    print(mmaC);
+//    print_latex(mmaC);
+//    print_latex(MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{});
+//    print_latex(copyA_shared_registers);
 
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
@@ -241,11 +262,11 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
     t.start();
     for (int i = 0; i < n_runs; i++) {
         gemm_device<<<dimGrid, dimBlock, 0>>>(
-            prob_shape, cta_tiler,
-            A, dA, sA, copyA,
-            B, dB, sB, copyB,
-            C, dC, sC, mmaC,
-            Int<1>{}, Int<0>{});
+                prob_shape, cta_tiler,
+                A, dA, sA, copyA_global_shared, copyA_shared_registers,
+                B, dB, sB, copyB_global_shared, copyB_shared_registers,
+                C, dC, sC, mmaC,
+                Int<1>{}, Int<0>{});
     }
     cudaDeviceSynchronize();
     t.stop();
