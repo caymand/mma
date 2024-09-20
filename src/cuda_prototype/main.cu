@@ -205,10 +205,10 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
     auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
 
     // Define CTA tile sizes (static)
-//    TODO: get from calculation
-    auto bM = Int<128>{};
-    auto bN = Int<128>{};
-    auto bK = Int<16>{};
+//    TODO: get from calculation, use 128 rather than 64
+    auto bM = Int<64>{};
+    auto bN = Int<64>{};
+    auto bK = Int<32>{};
     auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
     auto bP = Int<3>{};  // Pipeline
 
@@ -227,11 +227,11 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
 //    TODO try other cache and Zfill
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
         // TODO: calculate instead
-        Layout<Shape<_128, _2>, Stride<_2, _1>>{},
+        Layout<Shape<_32, _4>, Stride<_4, _1>>{},
         Layout<Shape<_1, _8>, Stride<_8, _1>>{}
     );
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
-        Layout<Shape<_16, _16>, Stride<_16, _1>>{},
+        Layout<Shape<_8, _16>, Stride<_16, _1>>{},
         Layout<Shape<_8, _1>, Stride<_1, _8>>{}
     );
 
@@ -246,12 +246,13 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
 //            Tile<_32, _32, _16>{}
 //            Layout<Shape<_1,_1>>{},
 //            Tile<_32, _32, _16>{}
-            Layout<Shape<_2,_4,_1>>{},
-            Tile<_128, _128, _16>{}
+            Layout<Shape<_2,_2,_1>>{},
+            Tile<_32, _32, _16>{}
     );
 
-    TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<UniversalCopy<half_t>, half_t>{}, mmaC);
-    TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<UniversalCopy<half_t>, half_t>{}, mmaC);
+//    TODO: figure out how to use this
+    TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<SM75_U32x4_LDSM_N, half_t>{}, mmaC);
+    TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<SM75_U16x8_LDSM_T, half_t>{}, mmaC);
 //    TODO: handle C in same way
 
 //    print(mmaC);
@@ -730,17 +731,17 @@ int main(int argc, char * argv[])
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
 //    );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
-        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
-    );
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
+//        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
+//    );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
-    );
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
+//            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
+//    );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_default, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass default")
-    );
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_default, true>(
+//            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass default")
+//    );
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
             n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
