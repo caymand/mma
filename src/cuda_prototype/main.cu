@@ -10,6 +10,9 @@
 #include <cassert>
 //#include <cublas.h>
 #include <cublas_v2.h>
+#include "cutlass/gemm/device/gemm.h"
+#include "cutlass/arch/arch.h"
+#include "cutlass/arch/mma.h"
 
 
 #define WARP_SIZE 32
@@ -29,6 +32,7 @@ enum mm_kernel {
     tensor_naive,
     tensor_optimized,
     cublas,
+    cutlass_default,
     cutlass_mm
 };
 
@@ -267,6 +271,58 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
                 B, dB, sB, copyB_global_shared, copyB_shared_registers,
                 C, dC, sC, mmaC,
                 Int<1>{}, Int<0>{});
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
+}
+
+
+// TODO: generalize to any elm types
+template <typename elmT, typename elmAccT = elmT>
+long int benchmark_cutlass_default(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
+
+template<>
+long int benchmark_cutlass_default<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
+    using CutlassGemm = cutlass::gemm::device::Gemm<
+            half_t,        // Data-type of A matrix
+            cutlass::layout::RowMajor,  // Layout of A matrix
+            half_t,        // Data-type of B matrix
+            cutlass::layout::RowMajor,  // Layout of B matrix
+            float,        // Data-type of C matrix
+            cutlass::layout::RowMajor,  // Layout of C matrix
+            float,
+            cutlass::arch::OpClassTensorOp,
+            cutlass::arch::Sm80
+    >;
+
+    // Define a CUTLASS GEMM type
+    CutlassGemm gemm_operator;
+
+    // Construct the CUTLASS GEMM arguments object.
+    //
+    // One of CUTLASS's design patterns is to define gemm argument objects that are constructible
+    // in host code and passed to kernels by value. These may include pointers, strides, scalars,
+    // and other arguments needed by Gemm and its components.
+    //
+    // The benefits of this pattern are (1.) a structured, composable strategy for passing host-constructible
+    // arguments to kernels and (2.) minimized initialization overhead on kernel entry.
+    //
+    CutlassGemm::Arguments args({m , n, k},  // Gemm Problem dimensions
+                                {A, k},    // Tensor-ref for source matrix A
+                                {B, n},    // Tensor-ref for source matrix B
+                                {C, n},    // Tensor-ref for source matrix C
+                                {C, n},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
+                                {1, 0}); // Scalars used in the Epilogue
+
+
+    TimeMeasurement t;
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+        gemm_operator(args);
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -536,6 +592,10 @@ void run_mmm_kernel(
         total_elapsed = benchmark_cutlass_mmm(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
+    } else if constexpr (kernel_type == mm_kernel::cutlass_default) {
+        total_elapsed = benchmark_cutlass_default(
+                n_runs, A_device, B_device, C_device, m, n, k
+        );
     } else {
         total_elapsed = benchmark_tiled_mmm<elmT, elmAccT>(
                 n_runs, A_device, B_device, C_device, m, n, k
@@ -676,6 +736,10 @@ int main(int argc, char * argv[])
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
             n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
+    );
+
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_default, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass default")
     );
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
