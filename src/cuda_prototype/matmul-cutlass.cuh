@@ -147,21 +147,18 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     ThrCopy thr_copy_b_shared_registers = copyB_shared_registers.get_slice(threadIdx.x);
     ThrMMA thr_mma = mma.get_slice(threadIdx.x);
 
-//    Tensor rA = make_tensor(thr_copy_a_shared_registers.get_layoutD_MN());
-//    Tensor rB = make_tensor(thr_copy_b_shared_registers.get_layoutD_MN());
-
+        Tensor tCsA = thr_mma.partition_A(sA);                              // (MMA,MMA_M,MMA_K,PIPE)
 //    Tensor tCsA = thr_copy_a_shared_registers.partition_S(sA);
-    Tensor tCsA = thr_mma.partition_A(sA);                               // (MMA,MMA_M,MMA_K,PIPE)
 
-//    Tensor tCrA = thr_copy_a_shared_registers.partition_D(rA);
     Tensor tCrA = thr_mma.make_fragment_A(tCsA(_,_,_,0));                // (MMA,MMA_M,MMA_K)
+//    Tensor tCrA_copy = thr_copy_a_shared_registers.retile_D(tCrA);
 
 
-//    Tensor tCsB = thr_copy_b_shared_registers.partition_S(sB);
     Tensor tCsB = thr_mma.partition_B(sB);                               // (MMA,MMA_N,MMA_K,PIPE)
+//    Tensor tCsB = thr_copy_b_shared_registers.partition_S(sB);
 
-//    Tensor tCrB = thr_copy_b_shared_registers.partition_D(rB);
     Tensor tCrB = thr_mma.make_fragment_B(tCsB(_,_,_,0));                // (MMA,MMA_N,MMA_K)
+//    Tensor tCrB_copy = thr_copy_b_shared_registers.retile_D(tCrB);
 
 
 //    if (thread0()) {
@@ -211,6 +208,8 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
         // Prefetch the first rmem from the first k-tile
         copy(tCsA_p(_,_,Int<0>{}), tCrA(_,_,Int<0>{}));
         copy(tCsB_p(_,_,Int<0>{}), tCrB(_,_,Int<0>{}));
+//        copy(thr_copy_a_shared_registers, tCsA_p(_,_,Int<0>{}), tCrA_copy(_,_,Int<0>{}));
+//        copy(thr_copy_b_shared_registers, tCsB_p(_,_,Int<0>{}), tCrB_copy(_,_,Int<0>{}));
     }
 
     //
@@ -247,6 +246,8 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
             auto k_block_next = (k_block + Int<1>{}) % K_BLOCK_MAX;      // static
             copy(tCsA_p(_,_,k_block_next), tCrA(_,_,k_block_next));
             copy(tCsB_p(_,_,k_block_next), tCrB(_,_,k_block_next));
+//            copy(thr_copy_a_shared_registers, tCsA_p(_,_,k_block_next), tCrA_copy(_,_,k_block_next));
+//            copy(thr_copy_b_shared_registers, tCsB_p(_,_,k_block_next), tCrB_copy(_,_,k_block_next));
             // Copy gmem to smem before computing gemm on each k-pipe
             if (k_block == 0)
             {
