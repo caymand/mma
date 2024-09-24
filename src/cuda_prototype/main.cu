@@ -32,7 +32,7 @@ enum mm_kernel {
     tensor_naive,
     tensor_optimized,
     cublas,
-    cutlass_default,
+    cutlass_simple,
     cutlass_mm
 };
 
@@ -171,6 +171,102 @@ long int benchmark_optimized_tensor_mmm(
     return t.elapsed();
 }
 
+
+template <typename elmT, typename elmAccT = elmT>
+long int benchmark_cutlass_mmm_simple(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
+template<>
+long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs, 
+                                                     half_t * A, half_t * B, float * C, 
+                                                     int m, int n, int k) 
+{
+    using namespace cute;
+    // Define shapes (dynamic)
+    auto M = int(m);
+    auto N = int(n);
+    auto K = int(k);
+    auto prob_shape = make_shape(M, N, K);                   // (M, N, K)
+
+    // Define strides (mixed)
+    auto dA = make_stride(K, Int<1>{});                      // (dM, dK)
+    auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
+    auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
+
+    auto bM = Int<128>{};
+    auto bN = Int<128>{};
+    auto bK = Int<64>{};
+    auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
+    
+#ifndef CUTLASS_SIMPLE_PAD
+    auto pad = Int<0>{};
+#else
+    auto pad = Int<8>{};
+#endif
+    std::cout << "Padding: " << pad << std::endl;
+    auto sA_buffer = make_layout(make_shape(bM, bK), 
+                                 make_stride(bK + pad, Int<1>{}));
+    auto sB_buffer = make_layout(make_shape(bN, bK), 
+                                 make_stride(Int<1>{}, pad + bN));
+    
+    // TODO: Swizzle, double buffering with async copies.
+    // auto sA = tile_to_shape(composition(Swizzle<2,0,3>{}, sA_buffer), 
+    //                         make_shape(bM, bK));
+    // auto sB = tile_to_shape(composition(Swizzle<2,0,3>{}, sB_buffer), 
+    //                         make_shape(bN, bK));
+    auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK));
+    auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK));
+    auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
+    
+    
+    // auto swizzled_sA = composition(Swizzle<2,0,3>{}, sA);
+    // auto swizzled_sB = composition(Swizzle<2,0,3>{}, sB);
+    
+    // constexpr auto elms_per_load = Int<sizeof(uint128_t) / sizeof(half_t)>{};
+    // constexpr auto threadsK_A = bK / elms_per_load;
+    // constexpr auto threadsM_A = bM / threadsK_A;
+    // constexpr auto threadsN_B = bN / elms_per_load;
+    // constexpr auto threadsK_B = bK; 
+    
+    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+                                                    Layout<Shape<_128, _2>, Stride<_2, _1>>{},
+                                                    Layout<Shape<_1, _8>, Stride<_8, _1>>{});
+                                                    //     Layout<Shape<threadsM_A, threadsK_A>, Stride<threadsK_A, _1>>{},
+                                                    // Layout<Shape<_1, elms_per_load>, Stride<elms_per_load, _1>{});
+    // TODO: Use this copy atom: SM80_CP_ASYNC_CACHEALWAYS
+    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+                                                    Layout<Shape<_16, _16>, Stride<_16, _1>>{},
+                                                    Layout<Shape<_8, _1>, Stride<_1, _8>>{});
+    TiledMMA mmaC = make_tiled_mma(
+            // UniversalFMA<float, half_t, half_t>{},
+            // Layout<Shape<_16, _16, _1>>{}
+            MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
+            Layout<Shape<_2,_4,_1>>{}, // 8 warps or 256 threads
+            Tile<_32, _32, _16>{}
+    );
+    
+    // print_latex(mmaC);
+
+    dim3 dimBlock(size(mmaC));
+    dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+
+    TimeMeasurement t;
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+        gemm_simple<<<dimGrid, dimBlock, 0>>>(
+                prob_shape, cta_tiler,
+                A, dA, sA, copyA_global_shared,
+                B, dB, sB, copyB_global_shared,
+                C, dC, sC, mmaC,
+                Int<1>{}, Int<0>{});
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
+
+    
+}
 
 //// Setup params for a NT GEMM
 //template <class TA, class TB, class TC,
@@ -593,8 +689,8 @@ void run_mmm_kernel(
         total_elapsed = benchmark_cutlass_mmm(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
-    } else if constexpr (kernel_type == mm_kernel::cutlass_default) {
-        total_elapsed = benchmark_cutlass_default(
+    } else if constexpr (kernel_type == mm_kernel::cutlass_simple) {
+        total_elapsed = benchmark_cutlass_mmm_simple(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
     } else {
@@ -731,21 +827,21 @@ int main(int argc, char * argv[])
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
-//        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
-//    );
+   benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
+       n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
+   );
 
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
 //            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_default, true>(
-//            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass default")
-//    );
+   benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_simple, true>(
+           n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
+   );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
-    );
+    // benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
+    //         n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
+    // );
 
     cudaFree(A.to_gpu());
     cudaFree(B.to_gpu());
