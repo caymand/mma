@@ -5,6 +5,7 @@
 #include "matmul-tensor-naive.cuh"
 #include "matmul-tensor.cuh"
 #include "matmul-cutlass.cuh"
+#include "matmul-cutlass-simple.cuh"
 #include "matmul-cutlass2.cuh"
 //#include "cuda_fp16.h"
 #include "cutlass/half.h"
@@ -202,61 +203,50 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto bK = Int<64>{};
     auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
 
-#ifndef CUTLASS_SIMPLE_PAD
-    auto pad = Int<0>{};
-#else
-    auto pad = Int<8>{};
-#endif
-    std::cout << "Padding: " << pad << std::endl;
-    auto sA_buffer = make_layout(make_shape(bM, bK),
-                                 make_stride(bK + pad, Int<1>{}));
-    auto sB_buffer = make_layout(make_shape(bN, bK),
-                                 make_stride(Int<1>{}, pad + bN));
-
-    // TODO: Swizzle, double buffering with async copies.
-    auto swizzle_layoutAtom_A = composition(Swizzle<3,3,3>{},
-                                     Layout<Shape < _8,_64>,
-                                            Stride<_64, _1>>{});
-    auto swizzle_layoutAtom_B = composition(Swizzle<3,3,3>{},
-                                            Layout< Shape <_64, _8>,
-                                                    Stride< _1,_64>>{});
+    auto swizzle_layoutAtom_A = composition(
+            Swizzle<3,3,3>{},
+            Layout<
+                    Shape < _8,_64>,
+                    Stride<_64, _1>
+            >{}
+    );
+    auto swizzle_layoutAtom_B = composition(
+            Swizzle<3,3,3>{},
+            Layout<
+                    Shape <_64, _8>,
+                    Stride< _1,_64>
+            >{}
+    );
 
     auto sA = tile_to_shape(swizzle_layoutAtom_A, make_shape(bM, bK));
     auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
-                                                    Layout< Shape <_16,_8>,
-                                                            Stride< _8,_1>>{},
-                                                    Layout<Shape < _1,_8>>{});
-                                                    // Layout<Shape<_128, _2>, Stride<_2, _1>>{},
-                                                    // Layout<Shape<_1, _8>, Stride<_8, _1>>{});
+            Layout<
+                    Shape<_16,_8>,
+                    Stride<_8,_1>
+            >{},
+            Layout<Shape<_1,_8>>{}
+    );
 
     // TODO: Use this copy atom: SM80_CP_ASYNC_CACHEALWAYS
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
-                                                    Layout< Shape <_16,_8>,
-                                                            Stride< _1,_16>>{},
-                                                    Layout<Shape < _8,_1>>{});
-                                                    // Layout<Shape<_16, _16>, Stride<_16, _1>>{},
-                                                    // Layout<Shape<_8, _1>, Stride<_1, _8>>{});
-
-    TiledMMA mmaC = make_tiled_mma(
-            // UniversalFMA<float, half_t, half_t>{},
-            // Layout<Shape<_16, _16, _1>>{}
-            // MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
-            // Layout<Shape<_2,_4,_1>>{}, // 8 warps or 256 threads
-            // Tile<_32, _32, _16>{}
-            MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
-            Layout<Shape<_2,_2,_1>>{}, // 8 warps or 256 threads
-            Tile<_32, _32, _16>{}
-
+            Layout<
+                    Shape<_16,_8>,
+                    Stride<_1,_16>
+            >{},
+            Layout<Shape<_8,_1>>{}
     );
 
-    auto shared_regs_tiled_copy_A = make_tiled_copy_A(Copy_Atom<SM75_U32x4_LDSM_N, half_t>{},
-                                                      mmaC);
-    auto shared_regs_tiled_copy_B = make_tiled_copy_A(Copy_Atom<SM75_U16x8_LDSM_T, half_t>{},
-                                                      mmaC);
-    // print_latex(mmaC);
+    TiledMMA mmaC = make_tiled_mma(
+            MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
+            Layout<Shape<_2,_2,_1>>{},
+            Tile<_32, _32, _16>{}
+    );
+
+    auto shared_regs_tiled_copy_A = make_tiled_copy_A(Copy_Atom<SM75_U32x4_LDSM_N, half_t>{}, mmaC);
+    auto shared_regs_tiled_copy_B = make_tiled_copy_A(Copy_Atom<SM75_U16x8_LDSM_T, half_t>{}, mmaC);
 
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
@@ -277,8 +267,6 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     // Check if kernel launch was successfull
     gpuAssert(cudaPeekAtLastError());
     return t.elapsed();
-
-
 }
 
 //// Setup params for a NT GEMM
@@ -1181,9 +1169,9 @@ int main(int argc, char * argv[])
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass custom")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
-//            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
-//    );
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
+    );
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_simple, true>(
             n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
