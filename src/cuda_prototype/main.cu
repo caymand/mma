@@ -208,29 +208,23 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
                                  make_stride(Int<1>{}, pad + bN));
     
     // TODO: Swizzle, double buffering with async copies.
-    // auto sA = tile_to_shape(composition(Swizzle<2,0,3>{}, sA_buffer), 
-    //                         make_shape(bM, bK));
-    // auto sB = tile_to_shape(composition(Swizzle<2,0,3>{}, sB_buffer), 
-    //                         make_shape(bN, bK));
-    auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK));
-    auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK));
+    auto swizzle_layoutAtom = composition(Swizzle<3,3,3>{}, 
+                                     Layout<Shape < _8,_64>,
+                                            Stride<_64, _1>>{});
+    // TODO: Is this optimal swizzling?
+    // auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK));
+    // auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK));
+    auto sA = tile_to_shape(swizzle_layoutAtom, make_shape(bM, bK));
+    auto sB = tile_to_shape(swizzle_layoutAtom, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
     
-    
-    // auto swizzled_sA = composition(Swizzle<2,0,3>{}, sA);
-    // auto swizzled_sB = composition(Swizzle<2,0,3>{}, sB);
-    
-    // constexpr auto elms_per_load = Int<sizeof(uint128_t) / sizeof(half_t)>{};
-    // constexpr auto threadsK_A = bK / elms_per_load;
-    // constexpr auto threadsM_A = bM / threadsK_A;
-    // constexpr auto threadsN_B = bN / elms_per_load;
-    // constexpr auto threadsK_B = bK; 
-    
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+                                                    // Layout< Shape <_16,_8>,
+                                                    //         Stride< _8,_1>>{},
+                                                    // Layout<Shape < _1,_8>>{});
                                                     Layout<Shape<_128, _2>, Stride<_2, _1>>{},
                                                     Layout<Shape<_1, _8>, Stride<_8, _1>>{});
-                                                    //     Layout<Shape<threadsM_A, threadsK_A>, Stride<threadsK_A, _1>>{},
-                                                    // Layout<Shape<_1, elms_per_load>, Stride<elms_per_load, _1>{});
+    
     // TODO: Use this copy atom: SM80_CP_ASYNC_CACHEALWAYS
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
                                                     Layout<Shape<_16, _16>, Stride<_16, _1>>{},
@@ -839,9 +833,9 @@ int main(int argc, char * argv[])
            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
    );
 
-    // benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
-    //         n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
-    // );
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
+    );
 
     cudaFree(A.to_gpu());
     cudaFree(B.to_gpu());
