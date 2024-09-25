@@ -214,16 +214,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto swizzle_layoutAtom_B = composition(Swizzle<3,3,3>{},
                                             Layout< Shape <_64, _8>,
                                                     Stride< _1,_64>>{});
-    // auto swizzle_layoutAtom_A = composition(Swizzle<2,3,3>{}, 
-    //                                  Layout<Shape < _8,_32>,
-    //                                         Stride<_32, _1>>{});
-    // auto swizzle_layoutAtom_A = composition(Swizzle<3,3,3>{}, 
-    //                                  Layout<Shape < _32,_8>,
-    //                                         Stride<_8, _1>>{});
-    // TODO: Is this optimal swizzling?
-    // auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK));
-    // auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK));
-    // Same as sm80_mma_multistage
+    
     auto sA = tile_to_shape(swizzle_layoutAtom_A, make_shape(bM, bK));
     auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
@@ -238,7 +229,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     // TODO: Use this copy atom: SM80_CP_ASYNC_CACHEALWAYS
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
                                                     Layout< Shape <_16,_8>,
-                                                            Stride< _8,_1>>{},
+                                                            Stride< _1,_16>>{},
                                                     Layout<Shape < _8,_1>>{});                                                    
                                                     // Layout<Shape<_16, _16>, Stride<_16, _1>>{},
                                                     // Layout<Shape<_8, _1>, Stride<_1, _8>>{});
@@ -255,6 +246,10 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
 
     );
     
+    auto shared_regs_tiled_copy_A = make_tiled_copy_A(Copy_Atom<SM75_U32x4_LDSM_N, half_t>{},
+                                                      mmaC);
+    auto shared_regs_tiled_copy_B = make_tiled_copy_A(Copy_Atom<SM75_U16x8_LDSM_T, half_t>{},
+                                                      mmaC);
     // print_latex(mmaC);
 
     dim3 dimBlock(size(mmaC));
@@ -265,8 +260,8 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     for (int i = 0; i < n_runs; i++) {
         gemm_simple<<<dimGrid, dimBlock, 0>>>(
                 prob_shape, cta_tiler,
-                B, dB, sB, copyB_global_shared,
-                A, dA, sA, copyA_global_shared,
+                B, dB, sB, copyB_global_shared, shared_regs_tiled_copy_B,
+                A, dA, sA, copyA_global_shared, shared_regs_tiled_copy_A,
                 C, dC, sC, mmaC,
                 Int<1>{}, Int<0>{});
     }
@@ -319,6 +314,13 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
     auto bK = Int<32>{};
     auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
     auto bP = Int<3>{};  // Pipeline
+    
+    auto swizzle_layoutAtom_A = composition(Swizzle<3,3,3>{}, 
+                                     Layout<Shape < _8,_32>,
+                                            Stride<_32, _1>>{});
+    auto swizzle_layoutAtom_B = composition(Swizzle<3,3,3>{},
+                                            Layout< Shape <_32, _8>,
+                                                    Stride< _1,_32>>{});    
 
     auto sA_buffer = make_layout(make_shape(bM, bK), make_stride(bK + Int<8>{}, Int<1>{}));
     auto sB_buffer = make_layout(make_shape(bN, bK), make_stride(Int<1>{}, bN + Int<8>{}));
@@ -326,22 +328,26 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
     // Define the smem layouts (static)
 //    auto sA = make_layout(make_shape(bM, bK, bP), make_stride(bK, Int<1>{}));
 //    auto sB = make_layout(make_shape(bK, bN, bP), LayoutRight{});
-    auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK, bP));
-    auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK, bP));
+    auto sA = tile_to_shape(swizzle_layoutAtom_A, make_shape(bM, bK, bP));
+    auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK, bP));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
 //    TODO: calculate layouts based on size of elements
     // Define the thread layouts (static)
 //    TODO try other cache and Zfill
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
+                                                    Layout<Shape<_32, _4>,
+                                                            Stride<_4, _1>>{},
+                                                    Layout<Shape<_1, _8>>{});
         // TODO: calculate instead
-        Layout<Shape<_32, _4>, Stride<_4, _1>>{},
-        Layout<Shape<_1, _8>, Stride<_8, _1>>{}
-    );
+        // Layout<Shape<_32, _4>, Stride<_4, _1>>{},
+        // Layout<Shape<_1, _8>, Stride<_8, _1>>{});
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, half_t>{},
+                                                    // Layout<Shape<_32, _4>,
+                                                    //         Stride<_1, _4>>{},
+                                                    // Layout<Shape<_8, _1>>{});
         Layout<Shape<_8, _16>, Stride<_16, _1>>{},
-        Layout<Shape<_8, _1>, Stride<_1, _8>>{}
-    );
+        Layout<Shape<_8, _1>, Stride<_1, _8>>{});
 
 //    TiledMMA mmaC = make_tiled_mma(UniversalFMA<float,half_t,half_t>{},
 //        Layout<Shape<_16,_16,_1>>{} // 16x16x1 TiledMMA
