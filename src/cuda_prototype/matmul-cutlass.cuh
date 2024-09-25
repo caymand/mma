@@ -39,16 +39,16 @@
 
 
 template <class ProblemShape, class CtaTiler,
-        class TA, class AStride, class ASmemLayout, class TiledCopyAGlobalShared,
-        class TB, class BStride, class BSmemLayout, class TiledCopyBGlobalShared,
+        class TA, class AStride, class ASmemLayout, class TiledCopyAGlobalShared, class TiledCopyASharedRegisters,
+        class TB, class BStride, class BSmemLayout, class TiledCopyBGlobalShared, class TiledCopyBSharedRegisters,
         class TC, class CStride, class CSmemLayout, class TiledMma,
         class Alpha, class Beta>
 __global__ static
 __launch_bounds__(decltype(size(TiledMma{}))::value)
 void
 gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
-            TA const* A, AStride dA, ASmemLayout sA_layout, TiledCopyAGlobalShared copyA_global_shared,
-            TB const* B, BStride dB, BSmemLayout sB_layout, TiledCopyBGlobalShared copyB_global_shared,
+            TB const* B, BStride dB, BSmemLayout sB_layout, TiledCopyBGlobalShared copyB_global_shared, TiledCopyBSharedRegisters tiled_copy_shared_regs_B,
+            TA const* A, AStride dA, ASmemLayout sA_layout, TiledCopyAGlobalShared copyA_global_shared, TiledCopyASharedRegisters tiled_copy_shared_regs_A, 
             TC      * C, CStride dC, CSmemLayout          , TiledMma mma,
 Alpha alpha, Beta beta)
 {
@@ -57,8 +57,9 @@ Alpha alpha, Beta beta)
     CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});                   // (M, N, K)
     CUTE_STATIC_ASSERT_V(rank(cta_tiler) == Int<3>{});                   // (BLK_M, BLK_N, BLK_K)
 
-    CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(mma));                     // NumThreads
-    CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(mma));                     // NumThreads
+    // TODO: Should these be used?
+    // CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(mma));                     // NumThreads
+    // CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(mma));                     // NumThreads
 
     static_assert(is_static<ASmemLayout>::value);
     static_assert(is_static<BSmemLayout>::value);
@@ -114,7 +115,10 @@ Alpha alpha, Beta beta)
   CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBrB));                // CPY_N
   CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBsB));                // CPY_K
   CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBrB));                // CPY_K
-#endif     
+#endif 
+    // auto smem_thr_copy_A = tiled_copy_shared_regs_A.get_thread_slice(threadIdx.x);
+    // Tensor tCrC = smem_thr_copy_A.partition_S(sA);
+        
     ThrMMA thr_mma = mma.get_slice(threadIdx.x);
 
     Tensor tCsA = thr_mma.partition_A(sA);                              // (MMA,MMA_M,MMA_K)
