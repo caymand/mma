@@ -225,7 +225,6 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 //    auto sB = make_layout(make_shape(bK, bN, bP), LayoutRight{});
     auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK, bP));
     auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK, bP));
-    auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
 //    TODO: calculate layouts based on size of elements
     // Define the thread layouts (static)
@@ -258,12 +257,8 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 //    TODO: figure out how to use this
     TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<SM75_U32x4_LDSM_N, half_t>{}, mmaC);
     TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<SM75_U16x8_LDSM_T, half_t>{}, mmaC);
-//    TODO: handle C in same way
+//    TODO: handle C in same way?
 
-//    print(mmaC);
-//    print_latex(mmaC);
-//    print_latex(MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{});
-//    print_latex(copyA_shared_registers);
 
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
@@ -275,7 +270,7 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
                 prob_shape, cta_tiler,
                 A, dA, sA, copyA_global_shared, copyA_shared_registers,
                 B, dB, sB, copyB_global_shared, copyB_shared_registers,
-                C, dC, sC, mmaC,
+                C, dC, mmaC,
                 Int<1>{}, Int<0>{});
     }
     cudaDeviceSynchronize();
@@ -332,8 +327,8 @@ long int benchmark_cute_default<half_t, float>(int n_runs, half_t * A, half_t * 
     using CLayout = decltype(dC);
 
     // TODO: set
-    using ThreadBlockSize = _128;
-    using TiledMma = ;
+//    using ThreadBlockSize = _128;
+//    using TiledMma = ;
 
     using CopyMaxVecBits = _128;
     using TA = half_t;
@@ -1078,9 +1073,9 @@ int main(int argc, char * argv[])
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass custom")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
-//            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
-//    );
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
+    );
 
 //    using namespace cute;
 //

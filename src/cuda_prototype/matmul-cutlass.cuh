@@ -41,7 +41,7 @@
 template <class ProblemShape, class CtaTiler,
         class TA, class AStride, class ASmemLayout, class TiledCopyAGlobalShared, class TiledCopyASharedRegisters,
         class TB, class BStride, class BSmemLayout, class TiledCopyBGlobalShared, class TiledCopyBSharedRegisters,
-        class TC, class CStride, class CSmemLayout, class TiledMma,
+        class TC, class CStride, class TiledMma,
         class Alpha, class Beta>
 __global__ static
 __launch_bounds__(decltype(size(TiledMma{}))::value)
@@ -49,7 +49,7 @@ void
 gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
             TA const* A, AStride dA, ASmemLayout sA_layout, TiledCopyAGlobalShared copyA_global_shared, TiledCopyASharedRegisters copyA_shared_registers,
             TB const* B, BStride dB, BSmemLayout sB_layout, TiledCopyBGlobalShared copyB_global_shared, TiledCopyBSharedRegisters copyB_shared_registers,
-            TC      * C, CStride dC, CSmemLayout          , TiledMma mma,
+            TC      * C, CStride dC, TiledMma mma,
             Alpha alpha, Beta beta)
 {
     using namespace cute;
@@ -64,12 +64,9 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
     static_assert(is_static<ASmemLayout>::value);
     static_assert(is_static<BSmemLayout>::value);
-    static_assert(is_static<CSmemLayout>::value);
 
     CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));  // BLK_M
-    CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
     CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
-    CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
     CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
     CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));  // BLK_K
 
@@ -129,7 +126,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     // Start async loads for all pipes but the last
     CUTE_UNROLL
     for (int k_pipe = 0; k_pipe < K_PIPE_MAX-1; ++k_pipe) {
-//        TODO: uncomment
+//        TODO: uncomment, use collective copy?
         copy(copyA_global_shared, tAgA(_, _, _, k_tile_next), tAsA(_, _, _, k_pipe));
         copy(copyB_global_shared, tBgB(_, _, _, k_tile_next), tBsB(_, _, _, k_pipe));
         cp_async_fence();
