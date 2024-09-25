@@ -5,6 +5,7 @@
 #include "matmul-tensor-naive.cuh"
 #include "matmul-tensor.cuh"
 #include "matmul-cutlass.cuh"
+#include "matmul-cutlass2.cuh"
 //#include "cuda_fp16.h"
 #include "cutlass/half.h"
 #include <cassert>
@@ -13,6 +14,9 @@
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/arch/arch.h"
 #include "cutlass/arch/mma.h"
+
+#include "../../cutlass/test/unit/gemm/device/default_gemm_configuration.hpp"
+//#include "../../cutlass/test/unit/cute/cooperative_gemm_common.hpp"
 
 
 #define WARP_SIZE 32
@@ -33,7 +37,8 @@ enum mm_kernel {
     tensor_optimized,
     cublas,
     cutlass_default,
-    cutlass_mm
+    cutlass_custom,
+    cute_mm
 };
 
 
@@ -186,11 +191,11 @@ long int benchmark_optimized_tensor_mmm(
 //{
 // TODO: generalize to any elm types
 template <typename elmT, typename elmAccT = elmT>
-long int benchmark_cutlass_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
+long int benchmark_cute_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
 
 // TODO: base on TN to match tensor cores?
 template<>
-long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
+long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
     using namespace cute;
 
     // Define shapes (dynamic)
@@ -282,43 +287,150 @@ long int benchmark_cutlass_mmm<half_t, float>(int n_runs, half_t * A, half_t * B
 }
 
 
+template <typename elmT, typename elmAccT = elmT>
+long int benchmark_cute_default(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
+
+template<>
+long int benchmark_cute_default<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
+    using namespace cute;
+
+    // TODO: remove?
+    const auto alpha = static_cast<float>(1);
+    const auto beta  = static_cast<float>(0);
+
+    // Define shapes (dynamic)
+    auto M = int(m);
+    auto N = int(n);
+    auto K = int(k);
+    auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
+
+    // Define strides (mixed)
+    auto dA = make_stride(K, Int<1>{});                      // (dM, dK)
+    auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
+    auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
+
+//    // Define CTA tile sizes (static)
+////    TODO: get from calculation, use 128 rather than 64
+//    auto bM = Int<64>{};
+//    auto bN = Int<64>{};
+//    auto bK = Int<32>{};
+//    auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+//    auto bP = Int<3>{};  // Pipeline
+//
+//    auto sA_buffer = make_layout(make_shape(bM, bK), make_stride(bK + Int<8>{}, Int<1>{}));
+//    auto sB_buffer = make_layout(make_shape(bN, bK), make_stride(Int<1>{}, bN + Int<8>{}));
+//
+//    // Define the smem layouts (static)
+////    auto sA = make_layout(make_shape(bM, bK, bP), make_stride(bK, Int<1>{}));
+////    auto sB = make_layout(make_shape(bK, bN, bP), LayoutRight{});
+//    auto sA = tile_to_shape(sA_buffer, make_shape(bM, bK, bP));
+//    auto sB = tile_to_shape(sB_buffer, make_shape(bN, bK, bP));
+//    auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
+
+    using ALayout = decltype(dA);
+    using BLayout = decltype(dB);
+    using CLayout = decltype(dC);
+
+    // TODO: set
+    using ThreadBlockSize = _128;
+    using TiledMma = ;
+
+    using CopyMaxVecBits = _128;
+    using TA = half_t;
+    using TB = half_t;
+    using TC = float;
+    using Alpha = decltype(alpha);
+    using Beta = decltype(beta);
+
+//    auto kernel = cooperative_gemm_kernel<
+//            SMemALayout, SMemBLayout, SMemCLayout,
+//            SmemCopyOpA, SmemCopyOpB, SmemCopyOpC,
+//            ThreadBlockSize, TiledMma, CopyMaxVecBits,
+//            TA, TB, TC, Alpha, Beta,
+//            ALayout, BLayout, CLayout
+//    >;
+
+//    TODO: use?
+//    dim3 dimBlock(size(mmaC));
+//    dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+
+//    constexpr uint32_t copy_max_vec_bytes = CopyMaxVecBits / 8;
+//    const size_t shared_memory_size = round_up(sizeof(TA) * h_a.size(), copy_max_vec_bytes)
+//                                      + round_up(sizeof(TB) * h_b.size(), copy_max_vec_bytes)
+//                                      +         (sizeof(TC) * h_c.size());
+//    ASSERT_EQ(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(shared_memory_size)), 0);
+
+    TimeMeasurement t;
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+//        TODO: set grid size
+//        kernel<<<1, ThreadBlockSize, shared_memory_size>>>(
+//                thrust::raw_pointer_cast(d_a.data()),
+//                thrust::raw_pointer_cast(d_b.data()),
+//                thrust::raw_pointer_cast(d_c.data()),
+//                thrust::raw_pointer_cast(d_c_out.data()),
+//                alpha,
+//                beta,
+//                a_load_transform,
+//                b_load_transform,
+//                c_load_transform,
+//                c_store_transform
+//        );
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
+}
+
+
 // TODO: generalize to any elm types
 template <typename elmT, typename elmAccT = elmT>
 long int benchmark_cutlass_default(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
 
 template<>
 long int benchmark_cutlass_default<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
-    using CutlassGemm = cutlass::gemm::device::Gemm<
-            half_t,        // Data-type of A matrix
-            cutlass::layout::RowMajor,  // Layout of A matrix
-            half_t,        // Data-type of B matrix
-            cutlass::layout::RowMajor,  // Layout of B matrix
-            float,        // Data-type of C matrix
-            cutlass::layout::RowMajor,  // Layout of C matrix
-            float,
-            cutlass::arch::OpClassTensorOp,
-            cutlass::arch::Sm80
+    using ElementA_ = half_t;
+    using ElementB_ = half_t;
+    using ElementC_ = float;
+    using ElementAccumulator_ = float;
+    using OperatorClass_ = cutlass::arch::OpClassTensorOp;
+    using ArchTag_ = cutlass::arch::Sm80;
+
+    using GemmConfiguration = cutlass::gemm::device::DefaultGemmConfiguration<
+            OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
+            ElementAccumulator_
     >;
 
-    // Define a CUTLASS GEMM type
+    using CutlassGemm = cutlass::gemm::device::Gemm<
+            ElementA_,        // Data-type of A matrix
+            cutlass::layout::RowMajor,  // Layout of A matrix
+            ElementB_,        // Data-type of B matrix
+            cutlass::layout::RowMajor,  // Layout of B matrix
+            ElementC_,        // Data-type of C matrix
+            cutlass::layout::RowMajor,  // Layout of C matrix
+            ElementAccumulator_,
+            OperatorClass_,
+            ArchTag_,
+            GemmConfiguration::ThreadblockShape,
+            GemmConfiguration::WarpShape,
+            GemmConfiguration::InstructionShape,
+            GemmConfiguration::EpilogueOutputOp,
+            cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+            GemmConfiguration::kStages
+    >;
+
     CutlassGemm gemm_operator;
 
-    // Construct the CUTLASS GEMM arguments object.
-    //
-    // One of CUTLASS's design patterns is to define gemm argument objects that are constructible
-    // in host code and passed to kernels by value. These may include pointers, strides, scalars,
-    // and other arguments needed by Gemm and its components.
-    //
-    // The benefits of this pattern are (1.) a structured, composable strategy for passing host-constructible
-    // arguments to kernels and (2.) minimized initialization overhead on kernel entry.
-    //
     CutlassGemm::Arguments args({m , n, k},  // Gemm Problem dimensions
                                 {A, k},    // Tensor-ref for source matrix A
                                 {B, n},    // Tensor-ref for source matrix B
                                 {C, n},    // Tensor-ref for source matrix C
                                 {C, n},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
-                                {1, 0}); // Scalars used in the Epilogue
-
+                                {1, 0}     // Scalars used in the Epilogue
+    );
 
     TimeMeasurement t;
     t.start();
@@ -332,6 +444,221 @@ long int benchmark_cutlass_default<half_t, float>(int n_runs, half_t * A, half_t
     gpuAssert(cudaPeekAtLastError());
     return t.elapsed();
 }
+
+
+template <typename elmT, typename elmAccT = elmT>
+long int benchmark_cutlass_custom(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
+
+//template<>
+//long int benchmark_cutlass_custom<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
+//    using namespace cute;
+//
+//    // Define shapes (dynamic)
+//    auto M = int(m);
+//    auto N = int(n);
+//    auto K = int(k);
+//    auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
+//
+//    // Define strides (mixed)
+////    auto dA = make_stride(K, Int<1>{});                      // (dM, dK)
+////    auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
+////    auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
+//
+//    using ElementA = half_t;
+//    using LayoutA = cutlass::layout::RowMajor;
+//    const int kAlignmentA = 128 / sizeof_bits<ElementA>::value;
+//    using ElementB = half_t;
+//    using LayoutB = cutlass::layout::RowMajor;
+//    const int kAlignmentB = 128 / sizeof_bits<ElementB>::value;
+//
+//    using ElementC = float;
+//    using LayoutC = cutlass::layout::RowMajor;
+//    using ElementAccumulator = float;
+//
+//    using OperatorClass = cutlass::arch::OpClassTensorOp;
+//    using ArchTag = cutlass::arch::Sm80;
+//
+////    using GemmConfiguration = cutlass::gemm::device::DefaultGemmConfiguration<
+////            OperatorClass, ArchTag, ElementA, ElementB, ElementC,
+////            ElementAccumulator
+////    >;
+//
+//    using DefaultDeviceGemm = cutlass::gemm::device::Gemm<
+//            ElementA,
+//            LayoutA,
+//            ElementB,
+//            LayoutB,
+//            ElementC,
+//            LayoutC,
+//            ElementAccumulator,
+//            OperatorClass,
+//            ArchTag
+////            GemmConfiguration::ThreadblockShape,
+////            GemmConfiguration::WarpShape,
+////            GemmConfiguration::InstructionShape,
+////            GemmConfiguration::EpilogueOutputOp,
+////            cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+////            GemmConfiguration::kStages
+//    >;
+//
+////    using ThreadblockShape = DefaultDeviceGemm::ThreadblockShape;
+////    using WarpShape = DefaultDeviceGemm::WarpShape;
+////    using InstructionShape = DefaultDeviceGemm::InstructionShape;
+////    const int stages = DefaultDeviceGemm::kStages;
+//
+//    using ThreadblockShape = cutlass::gemm::GemmShape<128, 256, 32>;
+//    using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
+//    using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
+//    const int stages = 3;
+//    const bool gatherA = false;
+//    const bool gatherB = false;
+//    const bool scatterD = false;
+//
+//    using ThreadblockSwizzle = DefaultDeviceGemm::ThreadblockSwizzle;
+//
+////    using DefaultKernelGemm = DefaultDeviceGemm::KernelGemm;
+//    using DefaultKernelGemm = typename cutlass::gemm::kernel::DefaultGemm<
+//            ElementA,
+//            LayoutA,
+//            DefaultDeviceGemm::kAlignmentA,
+//            ElementB,
+//            LayoutB,
+//            DefaultDeviceGemm::kAlignmentB,
+//            ElementC,
+//            LayoutC,
+//            ElementAccumulator,
+//            OperatorClass,
+//            ArchTag,
+//            ThreadblockShape,
+//            WarpShape,
+//            InstructionShape,
+//            DefaultDeviceGemm::EpilogueOutputOp,
+//            ThreadblockSwizzle,
+//            stages,
+//            false,
+//            DefaultDeviceGemm::Operator,
+//            cutlass::gemm::SharedMemoryClearOption::kNone,
+//            gatherA,
+//            gatherB,
+//            scatterD,
+//            cutlass::layout::NoPermute,
+//            cutlass::layout::NoPermute,
+//            cutlass::layout::NoPermute
+//    >::GemmKernel;
+//
+//    using DefaultThreadBlockMma = DefaultKernelGemm::Mma;
+//
+//    // Define the MmaCore components
+//
+//    using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+//            ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+//            ElementB, LayoutB, ElementAccumulator, LayoutC ,
+//            OperatorClass, stages, DefaultDeviceGemm::Operator
+//    >;
+//
+//    // Define iterators over tiles from the A operand
+////    using IteratorA = DefaultThreadBlockMma::IteratorA;
+//    using IteratorA =
+//            cutlass::transform::threadblock::PredicatedTileIterator<
+//                    cutlass::MatrixShape<MmaCore::Shape::kM, MmaCore::Shape::kK>,
+//                    ElementA, LayoutA, 1, MmaCore::IteratorThreadMapA, kAlignmentA,
+//                    gatherA, cutlass::layout::NoPermute
+//    >;
+//
+//    // Define iterators over tiles from the B operand
+////    using IteratorB = DefaultThreadBlockMma::IteratorB;
+//    using IteratorB =
+//            cutlass::transform::threadblock::PredicatedTileIterator<
+//                    cutlass::MatrixShape<MmaCore::Shape::kK, MmaCore::Shape::kN>,
+//                    ElementB, LayoutB, 0, MmaCore::IteratorThreadMapB, kAlignmentB,
+//                    gatherB, cutlass::layout::NoPermute
+//    >;
+//
+//    // Define the threadblock-scoped pipelined matrix multiply
+////    using ThreadblockMma = cutlass::gemm::threadblock::MmaPipelined<
+////            typename MmaCore::Shape, IteratorA, typename MmaCore::SmemIteratorA,
+////            IteratorB, typename MmaCore::SmemIteratorB, ElementAccumulator,
+////            layout::RowMajor, typename MmaCore::MmaPolicy
+////    >;
+//    using ThreadBlockMma = cutlass::gemm::threadblock::MmaSingleStage<
+//        MmaCore::Shape,
+//        IteratorA,
+//        MmaCore::SmemIteratorA,
+//        IteratorB,
+//        MmaCore::SmemIteratorB,
+//        ElementC,
+//        LayoutC,
+//        DefaultThreadBlockMma::Policy
+//    >;
+//
+//    using KernelGemm = cutlass::gemm::kernel::Gemm<
+//        ThreadBlockMma,
+//        DefaultKernelGemm::Epilogue,
+//        DefaultKernelGemm::ThreadblockSwizzle,
+//        DefaultKernelGemm::kSplitKSerial
+//    >;
+//
+//    DefaultDeviceGemm::Arguments args({m , n, k},  // Gemm Problem dimensions
+//                                      {A, k},    // Tensor-ref for source matrix A
+//                                      {B, n},    // Tensor-ref for source matrix B
+//                                      {C, n},    // Tensor-ref for source matrix C
+//                                      {C, n},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
+//                                      {1, 0}     // Scalars used in the Epilogue
+//    );
+//
+//    // Determine grid shape
+//    ThreadblockSwizzle threadblock_swizzle;
+//
+//    cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
+//            args.problem_size,
+//            {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+//            args.split_k_slices);
+//
+//    // Initialize the Params structure
+//    auto params = KernelGemm::Params{
+//            args.problem_size,
+//            grid_shape,
+//            args.ref_A.non_const_ref(),
+//            args.ref_B.non_const_ref(),
+//            args.ref_C.non_const_ref(),
+//            args.ref_D,
+//            args.epilogue,
+//            nullptr,
+//            args.gather_A_indices,
+//            args.gather_B_indices,
+//            args.scatter_D_indices
+//    };
+//
+//    dim3 grid = threadblock_swizzle.get_grid_shape(params.grid_tiled_shape);
+//    dim3 block(KernelGemm::kThreadCount, 1, 1);
+//
+//    cudaError_t result;
+//
+//    int smem_size = int(sizeof(typename KernelGemm::SharedStorage));
+//
+//    if (smem_size >= (48 << 10)) {
+//        result = cudaFuncSetAttribute(cutlass::Kernel<KernelGemm>,
+//                                      cudaFuncAttributeMaxDynamicSharedMemorySize,
+//                                      smem_size);
+//
+////        if (result != cudaSuccess) {
+////            return Status::kErrorInternal;
+////        }
+//    }
+//
+//
+//    TimeMeasurement t;
+//    t.start();
+//    for (int i = 0; i < n_runs; i++) {
+//        cutlass::Kernel<KernelGemm><<<grid, block, smem_size>>>(params);
+//    }
+//    cudaDeviceSynchronize();
+//    t.stop();
+//
+//    // Check if kernel launch was successfull
+//    gpuAssert(cudaPeekAtLastError());
+//    return t.elapsed();
+//}
 
 
 template <typename elmT, typename elmAccT = elmT>
@@ -589,12 +916,16 @@ void run_mmm_kernel(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
     }
-    else if constexpr (kernel_type == mm_kernel::cutlass_mm) {
-        total_elapsed = benchmark_cutlass_mmm(
+    else if constexpr (kernel_type == mm_kernel::cute_mm) {
+        total_elapsed = benchmark_cute_mmm(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
     } else if constexpr (kernel_type == mm_kernel::cutlass_default) {
         total_elapsed = benchmark_cutlass_default(
+                n_runs, A_device, B_device, C_device, m, n, k
+        );
+    } else if constexpr (kernel_type == mm_kernel::cutlass_custom) {
+        total_elapsed = benchmark_cutlass_custom(
                 n_runs, A_device, B_device, C_device, m, n, k
         );
     } else {
@@ -731,9 +1062,9 @@ int main(int argc, char * argv[])
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
-//        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
-//    );
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
+        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
+    );
 
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
 //            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
@@ -743,9 +1074,37 @@ int main(int argc, char * argv[])
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass default")
 //    );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_mm, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass")
-    );
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_custom, true>(
+//            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass custom")
+//    );
+
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
+//            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
+//    );
+
+//    using namespace cute;
+//
+//    TiledMMA<MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>,
+//        Layout<Shape<_2,_2,_1>>,  // 2x2x1 thread group
+//        Tile<_32,_32,_16>
+//    > tiled_mma;       // 32x32x16 MMA for LDSM, 1x2x1 value group
+//
+//    using OperandA = cutlass::gemm::device::detail::DefaultGemm_TensorOpSm80_OperandA<half_t, cutlass::layout::RowMajor, 8, 32>;
+//
+//    OperandA::GmemTiledCopy copyA_global_shared;
+//    OperandA::SmemLayoutAtom smem_layout_A;
+//
+//    auto smem_tiled_copy_A = make_tiled_copy_A(OperandA::SmemCopyAtom{}, tiled_mma);
+//
+//    auto [layoutS_MN, thrID_S] = copyA_global_shared.get_layoutS_MN();
+//    auto [layoutD_MN, thrID_D] = copyA_global_shared.get_layoutD_MN();
+//
+//
+//
+////    print_latex_copy(layoutS_MN, thrID_S, composition(smem_layout_A, layoutD_MN), thrID_D);
+//
+//    print_latex(smem_layout_A);
+////    print_latex(smem_tiled_copy_A);
 
     cudaFree(A.to_gpu());
     cudaFree(B.to_gpu());
