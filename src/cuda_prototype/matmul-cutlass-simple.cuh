@@ -38,28 +38,32 @@
 #include <cute/tensor.hpp>
 
 
-template <class ProblemShape, class CtaTiler,
-        class TA, class AStride, class ASmemLayout, class TiledCopyAGlobalShared, class TiledCopyASharedRegisters,
-        class TB, class BStride, class BSmemLayout, class TiledCopyBGlobalShared, class TiledCopyBSharedRegisters,
+template <
+        class CopyOpA, class CopyOpB,
+        class ProblemShape, class CtaTiler,
+        class TA, class AStride, class ASmemLayout, class TiledCopyAGlobalShared,
+        class TB, class BStride, class BSmemLayout, class TiledCopyBGlobalShared,
         class TC, class CStride, class CSmemLayout, class TiledMma,
-        class Alpha, class Beta>
+        class Alpha, class Beta
+>
 __global__ static
 __launch_bounds__(decltype(size(TiledMma{}))::value)
 void
 gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
-            TB const* B, BStride dB, BSmemLayout sB_layout, TiledCopyBGlobalShared copyB_global_shared, TiledCopyBSharedRegisters tiled_copy_shared_regs_B,
-            TA const* A, AStride dA, ASmemLayout sA_layout, TiledCopyAGlobalShared copyA_global_shared, TiledCopyASharedRegisters tiled_copy_shared_regs_A, 
-            TC      * C, CStride dC, CSmemLayout          , TiledMma mma,
-Alpha alpha, Beta beta)
+            TA const* A, AStride dA, ASmemLayout sA_layout, TiledCopyAGlobalShared copyA_global_shared,
+            TB const* B, BStride dB, BSmemLayout sB_layout, TiledCopyBGlobalShared copyB_global_shared,
+            TC      * C, CStride dC, CSmemLayout sC_layout, TiledMma tiled_mma,
+            Alpha alpha, Beta beta
+)
 {
     using namespace cute;
+
 #if 1
     CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});                   // (M, N, K)
     CUTE_STATIC_ASSERT_V(rank(cta_tiler) == Int<3>{});                   // (BLK_M, BLK_N, BLK_K)
 
-    // TODO: Should these be used?
-    // CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(mma));                     // NumThreads
-    // CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(mma));                     // NumThreads
+    CUTE_STATIC_ASSERT_V(size(copyA_global_shared) == size(tiled_mma));                     // NumThreads
+    CUTE_STATIC_ASSERT_V(size(copyB_global_shared) == size(tiled_mma));                     // NumThreads
 
     static_assert(is_static<ASmemLayout>::value);
     static_assert(is_static<BSmemLayout>::value);
@@ -75,7 +79,8 @@ Alpha alpha, Beta beta)
     CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), dA));         // dA strides for shape MK
     CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), dB));         // dB strides for shape NK
     CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), dC));         // dC strides for shape MN
-#endif           
+#endif
+
     Tensor mA = make_tensor(make_gmem_ptr(A), select<0,2>(shape_MNK), dA); // (M,K)
     Tensor mB = make_tensor(make_gmem_ptr(B), select<1,2>(shape_MNK), dB); // (N,K)
     Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), dC); // (M,N)
@@ -91,7 +96,13 @@ Alpha alpha, Beta beta)
     __shared__ TB smemB[cosize_v<BSmemLayout>];
     Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
     Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
-    
+
+//    TODO: remove
+//    __shared__ TC smemC[cosize_v<CSmemLayout>];
+//    Tensor sC = make_tensor(make_smem_ptr(smemC), sC_layout);            // (BLK_N,BLK_K)
+
+
+//    TODO: use collective copy?
     ThrCopy thr_copy_a_global_shared = copyA_global_shared.get_slice(threadIdx.x);
     Tensor tAgA = thr_copy_a_global_shared.partition_S(gA);                            // (CPY,CPY_M,CPY_K,k)
     Tensor tAsA = thr_copy_a_global_shared.partition_D(sA);                            // (CPY,CPY_M,CPY_K)
@@ -101,41 +112,79 @@ Alpha alpha, Beta beta)
     Tensor tBgB = thr_copy_b_global_shared.partition_S(gB);                            // (CPY,CPY_N,CPY_K,k)
     Tensor tBsB = thr_copy_b_global_shared.partition_D(sB);                            // (CPY,CPY_N,CPY_K)
     Tensor tBrB = make_fragment_like(tBsB);                                            // (CPY,CPY_N,CPY_K)
-    
+
+
+
+    ThrMMA thr_mma = tiled_mma.get_slice(threadIdx.x);
+    Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
+    Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
+
+
+//    Tensor tCsA = thr_mma.partition_A(sA);
+//    Tensor tCsB = thr_mma.partition_B(sB);
+
+
+    // Create register tensors for the MMA to operate on
+    Tensor tCrA  = thr_mma.partition_fragment_A(sA);                    // (MMA,MMA_M,MMA_K)
+    Tensor tCrB  = thr_mma.partition_fragment_B(sB);                    // (MMA,MMA_N,MMA_K)
+
+
+//            TODO: which to use?
+    auto smem_tiled_copy_A = make_tiled_copy_A(Copy_Atom<CopyOpA, TA>{}, tiled_mma);
+//    auto smem_tiled_copy_A = make_tiled_copy_A(Copy_Atom<CopyOpA, TA>{}, thr_mma);
+    auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(threadIdx.x);
+    Tensor tCsA            = smem_thr_copy_A.partition_S(sA);
+    Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA);
+    CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrA_copy_view));             // CPY_M
+    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCrA_copy_view));             // CPY_K
+
+//            TODO: which to use?
+    auto smem_tiled_copy_B = make_tiled_copy_B(Copy_Atom<CopyOpB, TB>{}, tiled_mma);
+//    auto smem_tiled_copy_B = make_tiled_copy_B(Copy_Atom<CopyOpB, TB>{}, thr_mma);
+    auto smem_thr_copy_B   = smem_tiled_copy_B.get_thread_slice(threadIdx.x);
+    Tensor tCsB            = smem_thr_copy_B.partition_S(sB);
+    Tensor tCrB_copy_view  = smem_thr_copy_B.retile_D(tCrB);
+    CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<1>(tCrB_copy_view));            // CPY_N
+    CUTE_STATIC_ASSERT_V(size<2>(tCsB) == size<2>(tCrB_copy_view));            // CPY_K
+
+
+
+//    if (thread0()) {
+//        print(tAgA); print("\n");
+//        print(sA); print("\n");
+//        print(tCsA); print("\n");
+//        print(tCrA); print("\n");
+//        print(tCrA_copy_view); print("\n");
+//        print(tCrC); print("\n");
+//    }
+
+
+
     // Prefetch into registers  
     copy(copyA_global_shared, tAgA(_,_,_,0), tArA);
     copy(copyB_global_shared, tBgB(_,_,_,0), tBrB);
     
 #if 1
-  CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tAsA));                // CPY_M
-  CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tArA));                // CPY_M
-  CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tAsA));                // CPY_K
-  CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tArA));                // CPY_K
-  CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBsB));                // CPY_N
-  CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBrB));                // CPY_N
-  CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBsB));                // CPY_K
-  CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBrB));                // CPY_K
-#endif 
-    // auto smem_thr_copy_A = tiled_copy_shared_regs_A.get_thread_slice(threadIdx.x);
-    // Tensor tCrC = smem_thr_copy_A.partition_S(sA);
-        
-    ThrMMA thr_mma = mma.get_slice(threadIdx.x);
+    CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tAsA));                // CPY_M
+    CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tArA));                // CPY_M
+    CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tAsA));                // CPY_K
+    CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tArA));                // CPY_K
+    CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBsB));                // CPY_N
+    CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBrB));                // CPY_N
+    CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBsB));                // CPY_K
+    CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBrB));                // CPY_K
 
-    Tensor tCsA = thr_mma.partition_A(sA);                              // (MMA,MMA_M,MMA_K)
-    Tensor tCsB = thr_mma.partition_B(sB);                               // (MMA,MMA_N,MMA_K)        
-    Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
-
-    // Allocate the accumulators -- same size as the projected data
-    Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
-#if 1
     CUTE_STATIC_ASSERT_V(  shape(tCrC) ==   shape(tCgC));                // (MMA,MMA_M,MMA_N)
-    CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCsA));                // MMA_M
-    CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCsB));                // MMA_N
-    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                // MMA_K   
+//    TODO: uncomment
+//    CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCrA));                // MMA_M
+//    CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCrB));                // MMA_N
+//    CUTE_STATIC_ASSERT_V(size<2>(tCrA) == size<2>(tCrB));                // MMA_K
 #endif
+
     // Clear the accumulators
     clear(tCrC);
-  
+
+
     int k_tile_max = size<3>(tAgA);
     
     for (int k_tile = 0; k_tile < k_tile_max; k_tile++)
@@ -149,9 +198,48 @@ Alpha alpha, Beta beta)
         int k_tile_next = (k_tile + 1 < k_tile_max) ? k_tile + 1 : k_tile;
         copy(copyA_global_shared, tAgA(_,_,_,k_tile_next), tArA);
         copy(copyB_global_shared, tBgB(_,_,_,k_tile_next), tBrB);
-        
-        gemm(mma, tCsA, tCsB, tCrC);
+
+
+        // Inner loop
+
+
+        // PREFETCH
+        copy(smem_tiled_copy_A, tCsA(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
+        copy(smem_tiled_copy_B, tCsB(_,_,Int<0>{}), tCrB_copy_view(_,_,Int<0>{}));
+
+        constexpr int K_BLOCK_MAX = size<2>(tCrA);
+
+        CUTE_UNROLL
+        for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+        {
+            // static-if load the next k_block. No k-predication required on these loads.
+            if (k_block < K_BLOCK_MAX-1)
+            {
+                // Load the next k_block
+                int k_next = k_block + 1;       // statically unrolled
+                copy(smem_tiled_copy_A, tCsA(_,_,k_next), tCrA_copy_view(_,_,k_next));
+                copy(smem_tiled_copy_B, tCsB(_,_,k_next), tCrB_copy_view(_,_,k_next));
+            }
+
+//            if (thread0()) {
+//                print("Tensors:\n");
+//                print_tensor(tCsA(_,_,k_block)); print("\n");
+//                print_tensor(tCrA_copy_view(_,_,k_block)); print("\n");
+////                print_tensor(tCrA(_,_,k_block)); print("\n");
+//            }
+
+            // TODO: is this needed?
+            // Transform A and B, relying on the compiler to remove in case of identity ops
+//            cute::transform(tCrA(_,_,k_block), cute::identity{});
+//            cute::transform(tCrB(_,_,k_block), cute::identity{});
+
+            // GEMM on k_block in registers
+//            TODO: which to use?
+            gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
+//            gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
+        }
     }
+
     // Write back to global with result
     axpby(alpha, tCrC, beta, tCgC);
 }

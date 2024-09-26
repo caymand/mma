@@ -15,8 +15,12 @@
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/arch/arch.h"
 #include "cutlass/arch/mma.h"
+#include "cutlass/gemm/kernel/gemm_universal.h"
+#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/collective/collective_builder.hpp"
+#include "cutlass/epilogue/collective/collective_epilogue.hpp"
 
-#include "../../cutlass/test/unit/gemm/device/default_gemm_configuration.hpp"
+//#include "../../cutlass/test/unit/gemm/device/default_gemm_configuration.hpp"
 //#include "../../cutlass/test/unit/cute/cooperative_gemm_common.hpp"
 
 
@@ -203,15 +207,18 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto bK = Int<64>{};
     auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
 
-    auto swizzle_layoutAtom_A = composition(
-            Swizzle<3,3,3>{},
+//    TODO: enable swizzling
+    auto swizzle_layoutAtom_A = (
+//            composition(
+//            Swizzle<3,3,3>{},
             Layout<
                     Shape < _8,_64>,
                     Stride<_64, _1>
             >{}
     );
-    auto swizzle_layoutAtom_B = composition(
-            Swizzle<3,3,3>{},
+    auto swizzle_layoutAtom_B = (
+//            composition(
+//            Swizzle<3,3,3>{},
             Layout<
                     Shape <_64, _8>,
                     Stride< _1,_64>
@@ -222,6 +229,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
+//    TODO: use memcpy async
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
             Layout<
                     Shape<_16,_8>,
@@ -245,19 +253,22 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
             Tile<_32, _32, _16>{}
     );
 
-    auto shared_regs_tiled_copy_A = make_tiled_copy_A(Copy_Atom<SM75_U32x4_LDSM_N, half_t>{}, mmaC);
-    auto shared_regs_tiled_copy_B = make_tiled_copy_A(Copy_Atom<SM75_U16x8_LDSM_T, half_t>{}, mmaC);
-
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+
+//    TODO: use dynamic shared memory
 
     TimeMeasurement t;
     t.start();
     for (int i = 0; i < n_runs; i++) {
-        gemm_simple<<<dimGrid, dimBlock, 0>>>(
+//        TODO: switch back
+//        gemm_simple<UniversalCopy<uint16_t>, UniversalCopy<uint16_t>><<<dimGrid, dimBlock>>>(
+//                TODO: why does this work?
+        gemm_simple<AutoVectorizingCopyWithAssumedAlignment<128>, AutoVectorizingCopyWithAssumedAlignment<128>><<<dimGrid, dimBlock>>>(
+//        gemm_simple<SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T><<<dimGrid, dimBlock>>>(
                 prob_shape, cta_tiler,
-                B, dB, sB, copyB_global_shared, shared_regs_tiled_copy_B,
-                A, dA, sA, copyA_global_shared, shared_regs_tiled_copy_A,
+                A, dA, sA, copyA_global_shared,
+                B, dB, sB, copyB_global_shared,
                 C, dC, sC, mmaC,
                 Int<1>{}, Int<0>{});
     }
@@ -553,10 +564,10 @@ long int benchmark_cutlass_custom(int n_runs, elmT * A, elmT * B, elmAccT * C, i
 //
 //    using ElementA = half_t;
 //    using LayoutA = cutlass::layout::RowMajor;
-//    const int kAlignmentA = 128 / sizeof_bits<ElementA>::value;
+//    const int AlignmentA = 128 / sizeof_bits<ElementA>::value;
 //    using ElementB = half_t;
 //    using LayoutB = cutlass::layout::RowMajor;
-//    const int kAlignmentB = 128 / sizeof_bits<ElementB>::value;
+//    const int AlignmentB = 128 / sizeof_bits<ElementB>::value;
 //
 //    using ElementC = float;
 //    using LayoutC = cutlass::layout::RowMajor;
@@ -570,174 +581,48 @@ long int benchmark_cutlass_custom(int n_runs, elmT * A, elmT * B, elmAccT * C, i
 ////            ElementAccumulator
 ////    >;
 //
-//    using DefaultDeviceGemm = cutlass::gemm::device::Gemm<
-//            ElementA,
-//            LayoutA,
-//            ElementB,
-//            LayoutB,
-//            ElementC,
-//            LayoutC,
+//    // Step 1: Generate the required collective layer mainloop specialization
+//    using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+//            ArchTag, OperatorClass,
+//            ElementA, LayoutA, AlignmentA,
+//            ElementB, LayoutB, AlignmentB,
 //            ElementAccumulator,
-//            OperatorClass,
-//            ArchTag
-////            GemmConfiguration::ThreadblockShape,
-////            GemmConfiguration::WarpShape,
-////            GemmConfiguration::InstructionShape,
-////            GemmConfiguration::EpilogueOutputOp,
-////            cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-////            GemmConfiguration::kStages
+//            Shape<_64, _64, _64>, Shape<_1, _1, _1>,
+//            cutlass::gemm::collective::StageCountAuto,
+//            cutlass::gemm::collective::KernelScheduleAuto
+//    >::CollectiveOp;
+//
+//// Step 2: Specify the collective layer epilogue type
+//    using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
+//            cutlass::gemm::TagToStrideC_t<LayoutC>,
+//            cutlass::gemm::TagToStrideC_t<LayoutC>,
+//            cutlass::epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+//
+//// Step 3: Compose the mainloop and epilogue together at the kernel layer
+//    using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+//            cute::Shape<int,int,int,int>, // ProblemShape [M,N,K,L]
+//            CollectiveMainloop,
+//            CollectiveEpilogue
 //    >;
 //
-////    using ThreadblockShape = DefaultDeviceGemm::ThreadblockShape;
-////    using WarpShape = DefaultDeviceGemm::WarpShape;
-////    using InstructionShape = DefaultDeviceGemm::InstructionShape;
-////    const int stages = DefaultDeviceGemm::kStages;
+//// Step 4: Wrap up the kernel::GemmUniversal kernel class
+//// with the device adapter to obtain a host-side handle to the kernel
+//    using CutlassGemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 //
-//    using ThreadblockShape = cutlass::gemm::GemmShape<128, 256, 32>;
-//    using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
-//    using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
-//    const int stages = 3;
-//    const bool gatherA = false;
-//    const bool gatherB = false;
-//    const bool scatterD = false;
+//    CutlassGemm gemm_operator;
 //
-//    using ThreadblockSwizzle = DefaultDeviceGemm::ThreadblockSwizzle;
-//
-////    using DefaultKernelGemm = DefaultDeviceGemm::KernelGemm;
-//    using DefaultKernelGemm = typename cutlass::gemm::kernel::DefaultGemm<
-//            ElementA,
-//            LayoutA,
-//            DefaultDeviceGemm::kAlignmentA,
-//            ElementB,
-//            LayoutB,
-//            DefaultDeviceGemm::kAlignmentB,
-//            ElementC,
-//            LayoutC,
-//            ElementAccumulator,
-//            OperatorClass,
-//            ArchTag,
-//            ThreadblockShape,
-//            WarpShape,
-//            InstructionShape,
-//            DefaultDeviceGemm::EpilogueOutputOp,
-//            ThreadblockSwizzle,
-//            stages,
-//            false,
-//            DefaultDeviceGemm::Operator,
-//            cutlass::gemm::SharedMemoryClearOption::kNone,
-//            gatherA,
-//            gatherB,
-//            scatterD,
-//            cutlass::layout::NoPermute,
-//            cutlass::layout::NoPermute,
-//            cutlass::layout::NoPermute
-//    >::GemmKernel;
-//
-//    using DefaultThreadBlockMma = DefaultKernelGemm::Mma;
-//
-//    // Define the MmaCore components
-//
-//    using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
-//            ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
-//            ElementB, LayoutB, ElementAccumulator, LayoutC ,
-//            OperatorClass, stages, DefaultDeviceGemm::Operator
-//    >;
-//
-//    // Define iterators over tiles from the A operand
-////    using IteratorA = DefaultThreadBlockMma::IteratorA;
-//    using IteratorA =
-//            cutlass::transform::threadblock::PredicatedTileIterator<
-//                    cutlass::MatrixShape<MmaCore::Shape::kM, MmaCore::Shape::kK>,
-//                    ElementA, LayoutA, 1, MmaCore::IteratorThreadMapA, kAlignmentA,
-//                    gatherA, cutlass::layout::NoPermute
-//    >;
-//
-//    // Define iterators over tiles from the B operand
-////    using IteratorB = DefaultThreadBlockMma::IteratorB;
-//    using IteratorB =
-//            cutlass::transform::threadblock::PredicatedTileIterator<
-//                    cutlass::MatrixShape<MmaCore::Shape::kK, MmaCore::Shape::kN>,
-//                    ElementB, LayoutB, 0, MmaCore::IteratorThreadMapB, kAlignmentB,
-//                    gatherB, cutlass::layout::NoPermute
-//    >;
-//
-//    // Define the threadblock-scoped pipelined matrix multiply
-////    using ThreadblockMma = cutlass::gemm::threadblock::MmaPipelined<
-////            typename MmaCore::Shape, IteratorA, typename MmaCore::SmemIteratorA,
-////            IteratorB, typename MmaCore::SmemIteratorB, ElementAccumulator,
-////            layout::RowMajor, typename MmaCore::MmaPolicy
-////    >;
-//    using ThreadBlockMma = cutlass::gemm::threadblock::MmaSingleStage<
-//        MmaCore::Shape,
-//        IteratorA,
-//        MmaCore::SmemIteratorA,
-//        IteratorB,
-//        MmaCore::SmemIteratorB,
-//        ElementC,
-//        LayoutC,
-//        DefaultThreadBlockMma::Policy
-//    >;
-//
-//    using KernelGemm = cutlass::gemm::kernel::Gemm<
-//        ThreadBlockMma,
-//        DefaultKernelGemm::Epilogue,
-//        DefaultKernelGemm::ThreadblockSwizzle,
-//        DefaultKernelGemm::kSplitKSerial
-//    >;
-//
-//    DefaultDeviceGemm::Arguments args({m , n, k},  // Gemm Problem dimensions
-//                                      {A, k},    // Tensor-ref for source matrix A
-//                                      {B, n},    // Tensor-ref for source matrix B
-//                                      {C, n},    // Tensor-ref for source matrix C
-//                                      {C, n},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
-//                                      {1, 0}     // Scalars used in the Epilogue
+//    CutlassGemm::Arguments args({m , n, k},  // Gemm Problem dimensions
+//                                {A, k},    // Tensor-ref for source matrix A
+//                                {B, n},    // Tensor-ref for source matrix B
+//                                {C, n},    // Tensor-ref for source matrix C
+//                                {C, n},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
+//                                {1, 0}     // Scalars used in the Epilogue
 //    );
-//
-//    // Determine grid shape
-//    ThreadblockSwizzle threadblock_swizzle;
-//
-//    cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
-//            args.problem_size,
-//            {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
-//            args.split_k_slices);
-//
-//    // Initialize the Params structure
-//    auto params = KernelGemm::Params{
-//            args.problem_size,
-//            grid_shape,
-//            args.ref_A.non_const_ref(),
-//            args.ref_B.non_const_ref(),
-//            args.ref_C.non_const_ref(),
-//            args.ref_D,
-//            args.epilogue,
-//            nullptr,
-//            args.gather_A_indices,
-//            args.gather_B_indices,
-//            args.scatter_D_indices
-//    };
-//
-//    dim3 grid = threadblock_swizzle.get_grid_shape(params.grid_tiled_shape);
-//    dim3 block(KernelGemm::kThreadCount, 1, 1);
-//
-//    cudaError_t result;
-//
-//    int smem_size = int(sizeof(typename KernelGemm::SharedStorage));
-//
-//    if (smem_size >= (48 << 10)) {
-//        result = cudaFuncSetAttribute(cutlass::Kernel<KernelGemm>,
-//                                      cudaFuncAttributeMaxDynamicSharedMemorySize,
-//                                      smem_size);
-//
-////        if (result != cudaSuccess) {
-////            return Status::kErrorInternal;
-////        }
-//    }
-//
 //
 //    TimeMeasurement t;
 //    t.start();
 //    for (int i = 0; i < n_runs; i++) {
-//        cutlass::Kernel<KernelGemm><<<grid, block, smem_size>>>(params);
+//        gemm_operator(args);
 //    }
 //    cudaDeviceSynchronize();
 //    t.stop();
@@ -1153,9 +1038,9 @@ int main(int argc, char * argv[])
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
-//        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
-//    );
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
+        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
+    );
 
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
 //            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
@@ -1169,37 +1054,14 @@ int main(int argc, char * argv[])
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass custom")
 //    );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
-    );
+//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
+//            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
+//    );
 
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_simple, true>(
             n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
     );
 
-//    using namespace cute;
-//
-//    TiledMMA<MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>,
-//        Layout<Shape<_2,_2,_1>>,  // 2x2x1 thread group
-//        Tile<_32,_32,_16>
-//    > tiled_mma;       // 32x32x16 MMA for LDSM, 1x2x1 value group
-//
-//    using OperandA = cutlass::gemm::device::detail::DefaultGemm_TensorOpSm80_OperandA<half_t, cutlass::layout::RowMajor, 8, 32>;
-//
-//    OperandA::GmemTiledCopy copyA_global_shared;
-//    OperandA::SmemLayoutAtom smem_layout_A;
-//
-//    auto smem_tiled_copy_A = make_tiled_copy_A(OperandA::SmemCopyAtom{}, tiled_mma);
-//
-//    auto [layoutS_MN, thrID_S] = copyA_global_shared.get_layoutS_MN();
-//    auto [layoutD_MN, thrID_D] = copyA_global_shared.get_layoutD_MN();
-//
-//
-//
-////    print_latex_copy(layoutS_MN, thrID_S, composition(smem_layout_A, layoutD_MN), thrID_D);
-//
-//    print_latex(smem_layout_A);
-////    print_latex(smem_tiled_copy_A);
 
     cudaFree(A.to_gpu());
     cudaFree(B.to_gpu());

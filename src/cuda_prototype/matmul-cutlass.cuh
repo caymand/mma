@@ -262,6 +262,13 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
                 ++smem_pipe_read;
                 smem_pipe_read = (smem_pipe_read == K_PIPE_MAX) ? 0 : smem_pipe_read;
             }
+
+//            if (thread0()) {
+//                print("Tensors:\n");
+//                print_tensor(tCsA_p(_,_,k_block)); print("\n");
+//                print_tensor(tCrA(_,_,k_block)); print("\n");
+//            }
+
             // Thread-level register gemm for k_block
             gemm(mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
         }
