@@ -207,7 +207,6 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto bK = Int<64>{};
     auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
 
-//    TODO: enable swizzling
     auto swizzle_layoutAtom_A =
             composition(
             Swizzle<3,3,3>{},
@@ -230,6 +229,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
 //    TODO: try other versions of memcpy async
+//    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
             Layout<
                     Shape<_16,_8>,
@@ -238,7 +238,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
             Layout<Shape<_1,_8>>{}
     );
 
-    // TODO: Use this copy atom: SM80_CP_ASYNC_CACHEALWAYS
+//    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
             Layout<
                     Shape<_16,_8>,
@@ -256,12 +256,11 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
-//    TODO: use dynamic shared memory
+//    TODO: use dynamic shared memory, try more configs
 
     TimeMeasurement t;
     t.start();
     for (int i = 0; i < n_runs; i++) {
-//        TODO: switch back
 //        gemm_simple<UniversalCopy<half_t>, UniversalCopy<half_t>><<<dimGrid, dimBlock>>>(
 //        gemm_simple<AutoVectorizingCopy, AutoVectorizingCopy><<<dimGrid, dimBlock>>>(
         gemm_simple<SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T><<<dimGrid, dimBlock>>>(
