@@ -185,6 +185,8 @@ long int benchmark_optimized_tensor_mmm(
 
 template <typename elmT, typename elmAccT = elmT>
 long int benchmark_cutlass_mmm_simple(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, int n, int k);
+
+// TODO: make general in element types?
 template<>
 long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
                                                      half_t * A, half_t * B, float * C,
@@ -253,22 +255,38 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
             Tile<_32, _32, _16>{}
     );
 
+    auto alpha = Int<1>{};
+    auto beta = Int<0>{};
+
+    auto kernel = gemm_simple<
+            SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T,
+            decltype(prob_shape), decltype(cta_tiler),
+            half_t, decltype(dA), decltype(sA), decltype(copyA_global_shared),
+            half_t, decltype(dB), decltype(sB), decltype(copyB_global_shared),
+            float, decltype(dC), decltype(sC), decltype(mmaC),
+            decltype(alpha), decltype(beta)
+    >;
+
+    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(half_t) + cosize_v<decltype(sB)> * sizeof(half_t);
+
+    cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_used);
+
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
-//    TODO: use dynamic shared memory, try more configs
+//    TODO: try more configs
 
     TimeMeasurement t;
     t.start();
     for (int i = 0; i < n_runs; i++) {
 //        gemm_simple<UniversalCopy<half_t>, UniversalCopy<half_t>><<<dimGrid, dimBlock>>>(
 //        gemm_simple<AutoVectorizingCopy, AutoVectorizingCopy><<<dimGrid, dimBlock>>>(
-        gemm_simple<SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T><<<dimGrid, dimBlock>>>(
+        kernel<<<dimGrid, dimBlock, shared_memory_used>>>(
                 prob_shape, cta_tiler,
                 A, dA, sA, copyA_global_shared,
                 B, dB, sB, copyB_global_shared,
                 C, dC, sC, mmaC,
-                Int<1>{}, Int<0>{}
+                alpha, beta
         );
     }
     cudaDeviceSynchronize();

@@ -58,6 +58,8 @@ gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
 {
     using namespace cute;
 
+    extern __shared__ __align__(128) uint1_t shared[];
+
 #if 1
     CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});                   // (M, N, K)
     CUTE_STATIC_ASSERT_V(rank(cta_tiler) == Int<3>{});                   // (BLK_M, BLK_N, BLK_K)
@@ -92,8 +94,8 @@ gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
     Tensor gC = local_tile(mC, select<0,1>(cta_tiler), select<0,1>(cta_coord));  // (BLK_M,BLK_N)
 
     // Shared memory buffers
-    __shared__ TA smemA[cosize_v<ASmemLayout>];
-    __shared__ TB smemB[cosize_v<BSmemLayout>];
+    auto smemA = reinterpret_cast<TA *>(shared);
+    auto smemB = reinterpret_cast<TB *>(smemA + cosize_v<ASmemLayout>);
     Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
     Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
 
