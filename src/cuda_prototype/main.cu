@@ -229,8 +229,8 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
-//    TODO: use memcpy async
-    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+//    TODO: try other versions of memcpy async
+    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
             Layout<
                     Shape<_16,_8>,
                     Stride<_8,_1>
@@ -239,7 +239,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     );
 
     // TODO: Use this copy atom: SM80_CP_ASYNC_CACHEALWAYS
-    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
             Layout<
                     Shape<_16,_8>,
                     Stride<_1,_16>
