@@ -208,17 +208,17 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
 
 //    TODO: enable swizzling
-    auto swizzle_layoutAtom_A = (
-//            composition(
-//            Swizzle<3,3,3>{},
+    auto swizzle_layoutAtom_A =
+            composition(
+            Swizzle<3,3,3>{},
             Layout<
                     Shape < _8,_64>,
                     Stride<_64, _1>
             >{}
     );
-    auto swizzle_layoutAtom_B = (
-//            composition(
-//            Swizzle<3,3,3>{},
+    auto swizzle_layoutAtom_B =
+            composition(
+            Swizzle<3,3,3>{},
             Layout<
                     Shape <_64, _8>,
                     Stride< _1,_64>
@@ -248,7 +248,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     );
 
     TiledMMA mmaC = make_tiled_mma(
-            MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
+            MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
             Layout<Shape<_2,_2,_1>>{},
             Tile<_32, _32, _16>{}
     );
@@ -262,15 +262,15 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     t.start();
     for (int i = 0; i < n_runs; i++) {
 //        TODO: switch back
-//        gemm_simple<UniversalCopy<uint16_t>, UniversalCopy<uint16_t>><<<dimGrid, dimBlock>>>(
-//                TODO: why does this work?
-        gemm_simple<AutoVectorizingCopyWithAssumedAlignment<128>, AutoVectorizingCopyWithAssumedAlignment<128>><<<dimGrid, dimBlock>>>(
-//        gemm_simple<SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T><<<dimGrid, dimBlock>>>(
+//        gemm_simple<UniversalCopy<half_t>, UniversalCopy<half_t>><<<dimGrid, dimBlock>>>(
+//        gemm_simple<AutoVectorizingCopy, AutoVectorizingCopy><<<dimGrid, dimBlock>>>(
+        gemm_simple<SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T><<<dimGrid, dimBlock>>>(
                 prob_shape, cta_tiler,
                 A, dA, sA, copyA_global_shared,
                 B, dB, sB, copyB_global_shared,
                 C, dC, sC, mmaC,
-                Int<1>{}, Int<0>{});
+                Int<1>{}, Int<0>{}
+        );
     }
     cudaDeviceSynchronize();
     t.stop();
@@ -347,7 +347,7 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 //    );
 
     TiledMMA mmaC = make_tiled_mma(
-            MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>{},
+            MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
 //            Layout<Shape<_2,_4,_1>>{}
 //            Layout<Shape<_2,_4,_1>, Stride<_4,_1,_8>>{},
 //            Tile<_32, _32, _16>{}

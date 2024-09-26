@@ -235,9 +235,11 @@ gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
             // GEMM on k_block in registers
 //            TODO: which to use?
-            gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
-//            gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
+//            gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
+            gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
         }
+
+//        gemm(tiled_mma, tCsA, tCsB, tCrC);
     }
 
     // Write back to global with result
