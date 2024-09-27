@@ -258,7 +258,21 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto alpha = Int<1>{};
     auto beta = Int<0>{};
 
-    auto kernel = gemm_simple<
+//    TODO: try these also on A100
+#ifdef NO_LDSM
+#define SIMPLE_KERNEL_NAME gemm_simple_no_ldsm
+    print("Using no LDSM kernel\n");
+#else
+#ifdef NO_PREFETCH
+#define SIMPLE_KERNEL_NAME gemm_simple_no_prefetch
+    print("Using no prefetch kernel\n");
+#else
+#define SIMPLE_KERNEL_NAME gemm_simple
+    print("Using prefetch kernel\n");
+#endif
+#endif
+
+    auto kernel = SIMPLE_KERNEL_NAME<
             SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T,
             decltype(prob_shape), decltype(cta_tiler),
             half_t, decltype(dA), decltype(sA), decltype(copyA_global_shared),
@@ -274,13 +288,11 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     dim3 dimBlock(size(mmaC));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
-//    TODO: try more configs
+//    TODO: try more configs, pipelining, prefetched synchronous copies
 
     TimeMeasurement t;
     t.start();
     for (int i = 0; i < n_runs; i++) {
-//        gemm_simple<UniversalCopy<half_t>, UniversalCopy<half_t>><<<dimGrid, dimBlock>>>(
-//        gemm_simple<AutoVectorizingCopy, AutoVectorizingCopy><<<dimGrid, dimBlock>>>(
         kernel<<<dimGrid, dimBlock, shared_memory_used>>>(
                 prob_shape, cta_tiler,
                 A, dA, sA, copyA_global_shared,
