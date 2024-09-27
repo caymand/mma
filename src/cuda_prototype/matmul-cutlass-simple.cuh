@@ -156,8 +156,10 @@ gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
         __syncthreads();
         copy(copyA_global_shared, tAgA(_,_,_,k_tile), tAsA);
         copy(copyB_global_shared, tBgB(_,_,_,k_tile), tBsB);
+#ifndef NO_CPASYNC
         cp_async_fence();
         cp_async_wait<0>();
+#endif
         __syncthreads();
 
 
@@ -309,8 +311,10 @@ gemm_simple_no_prefetch(ProblemShape shape_MNK, CtaTiler cta_tiler,
         __syncthreads();
         copy(copyA_global_shared, tAgA(_,_,_,k_tile), tAsA);
         copy(copyB_global_shared, tBgB(_,_,_,k_tile), tBsB);
+#ifndef NO_CPASYNC
         cp_async_fence();
         cp_async_wait<0>();
+#endif
         __syncthreads();
 
         // Inner loop
@@ -435,8 +439,10 @@ gemm_simple_no_ldsm(ProblemShape shape_MNK, CtaTiler cta_tiler,
         __syncthreads();
         copy(copyA_global_shared, tAgA(_,_,_,k_tile), tAsA);
         copy(copyB_global_shared, tBgB(_,_,_,k_tile), tBsB);
+#ifndef NO_CPASYNC
         cp_async_fence();
         cp_async_wait<0>();
+#endif
         __syncthreads();
 
 

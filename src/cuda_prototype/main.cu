@@ -231,8 +231,11 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
 //    TODO: try other versions of memcpy async
-//    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+#ifdef NO_CPASYNC
+    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+#else
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
+#endif
             Layout<
                     Shape<_16,_8>,
                     Stride<_8,_1>
@@ -240,8 +243,11 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
             Layout<Shape<_1,_8>>{}
     );
 
-//    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+#ifdef NO_CPASYNC
+    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+#else
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
+#endif
             Layout<
                     Shape<_16,_8>,
                     Stride<_1,_16>
@@ -258,7 +264,6 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto alpha = Int<1>{};
     auto beta = Int<0>{};
 
-//    TODO: try these also on A100
 #ifdef NO_LDSM
 #define SIMPLE_KERNEL_NAME gemm_simple_no_ldsm
     print("Using no LDSM kernel\n");
