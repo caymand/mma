@@ -230,6 +230,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
+//    TODO: check why NO_LDSM is better with NO_CPASYNC
 //    TODO: try other versions of memcpy async
 #ifdef NO_CPASYNC
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
