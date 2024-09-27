@@ -11,7 +11,7 @@ BLOCK_TILES_N=$8
 
 shift 8
 set -x
-nvcc -O3 -std=c++17 -arch=sm_80 -Xptxas=-v --expt-relaxed-constexpr -lcublas main.cu -o main \
+nvcc -O3 -std=c++17 -arch=sm_80 -Xptxas=-v --expt-relaxed-constexpr -lcublas -I../../cutlass/include/ main.cu -o main \
     -DFRAGS_M=$FRAGS_M \
     -DFRAGS_N=$FRAGS_N \
     -DFRAGS_K=$FRAGS_K \
