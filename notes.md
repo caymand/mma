@@ -11,7 +11,7 @@
 
 ## Intragroup kernel focus
 
-```
+```futhark
 let dotproduct [n] (x: [n]f16) (y: [n]f16) =
     #[sequential]map2 (*) x y |> reduce (+) 0
 
@@ -22,3 +22,6 @@ let intra_block_mmm [k] (A: [k][16][16]f16) (B: [k][16][16]f16) : [k][16][16]f16
     map2 matmul16 A B
 ```
 
+# Links
+
+- https://www.cs.utexas.edu/~flame/BLISRetreat2023/slides/Thakkar_BLISRetreat2023.pdf
