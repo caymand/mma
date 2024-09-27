@@ -4,3 +4,5 @@ build
 CMakeFiles
 src/cuda_prototype/main
 .idea
+.clangd
+cmake

@@ -1,6 +1,8 @@
 
+let mymul a b = map2 (*) a b
+
 let dotproduct (x: [16]f32) (y: [16]f32) =
-    #[sequential]map2 (*) x y |> 
+    #[sequential]mymul x y |> 
     #[sequential]reduce (+) 0
 
 let matmul16 (A: [16][16]f32) (B: [16][16]f32) : [16][16]f32 =
