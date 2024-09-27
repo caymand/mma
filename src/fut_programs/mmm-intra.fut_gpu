@@ -2,12 +2,12 @@ types {
   
 }
 
-fun gemm (A_101230 : [16i64][16i64]f32, B_101231: [16i64][16i64]f32, C_101232: *f32) : {*f32} = {
+fun gemm_123456 (A_101230 : [16i64][16i64]f32, B_101231: [16i64][16i64]f32, C_101232: *f32) : {*f32} = {
   {C_101232}
 }
 
 fun
-  copy_global_shared (smem_2312312 : *f32)  		     
+  copy_global_shared_12345 (smem_2312312 : *f32)  		     
   : {*f32} = {
     {smem_2312312}
 }
@@ -30,33 +30,36 @@ entry("main",
       let {B_scratch_10124 : [16i64][16i64]f32} =
         scratch(f32, 16i64, 16i64)
 -- Zero Initialize C
-      let {c_registers_10125 : [16i64][16i64]f32} =
+      let {c_registers_101251 : [16i64][16i64]f32} =
         segmap(inblock; )
         (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
-	  {0.0f}
+	  return {returns 0.0f32}
       }
 
 -- Sequential K loop
       let {defunc_0_f_res_6197 : [16i64][16i64]f32} =
 	#[sequential]
-	loop {redout_6204 : [16i64][16i64]f32} = {c_registers_10125}
+	loop {redout_6204 : [16i64][16i64]f32} = {c_registers_101251}
 	for i_6205:i64 < 1i64 do {
  -- Copy A to shared	    
-	  let {smem_A_10125} = segmap(inblock; )
-    (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
-	    let {copy_res_10126} = copy_global_shared(A_scratch_10123[gtid_6192, gtid_6193])
+	  let {smem_A_10125 : [16i64][16i64]f32} = segmap(inblock; )
+    (gtid_16192 < 16i64, gtid_16193 < 16i64) (~phys_tid_16194) : {f32} {
+    	    let {elm_101240 : f32} = A_scratch_10123[gtid_16192, gtid_16193]
+	    let {copy_res_10126 : f32} = apply copy_global_shared_12345(elm_101240) : {f32}
 	    return {returns copy_res_10126}
 	  }
  -- Copy B to shared	      
-	  let {smem_B_10127} = segmap(inblock; )
-    (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
-	    let {copy_res_10128} = copy_global_shared(B_scratch_10124[gtid_6192, gtid_6193])
+	  let {smem_B_10127 : [16i64][16i64]f32} = segmap(inblock; )
+    (gtid_26192 < 16i64, gtid_26193 < 16i64) (~phys_tid_26194) : {f32} {
+    	    let {elm_101241 : f32} = B_scratch_10124[gtid_26192, gtid_26193]
+	    let {copy_res_10128 : f32} = apply copy_global_shared_12345(elm_101241) : {f32}
 	    return {returns copy_res_10128}
 	  }
 
-	  let {final_res_10129} = segmap(inblock; )
-    (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
-	    let {gemm_res_101233} = gemm(smem_A_10125[gtid_6192, gtid_6193], smem_B_10127[gtid_6192, gtid_6193], c_registers_10125[gtid_6192, gtid_6193])
+	  let {final_res_10129 : [16i64][16i64]f32} = segmap(inblock; )
+    (gtid_36192 < 16i64, gtid_36193 < 16i64) (~phys_tid_36194) : {f32} {
+	    let {elm_101244 : f32} = c_registers_101251[gtid_36192, gtid_36193]
+	    let {gemm_res_101233 : f32} = apply gemm_123456(smem_A_10125, smem_B_10127, elm_101244) : {f32}
 	    return {returns gemm_res_101233}
 	  }	      
 	in {final_res_10129}
