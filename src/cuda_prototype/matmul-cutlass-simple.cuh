@@ -114,10 +114,6 @@ gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
     Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
 
 
-//    Tensor tCsA = thr_mma.partition_A(sA);
-//    Tensor tCsB = thr_mma.partition_B(sB);
-
-
     // Create register tensors for the MMA to operate on
     Tensor tCrA  = thr_mma.partition_fragment_A(sA);                    // (MMA,MMA_M,MMA_K)
     Tensor tCrB  = thr_mma.partition_fragment_B(sB);                    // (MMA,MMA_N,MMA_K)
@@ -188,7 +184,6 @@ gemm_simple(ProblemShape shape_MNK, CtaTiler cta_tiler,
             // GEMM on k_block in registers
             gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
         }
-//        gemm(thr_mma, tCsA, tCsB, tCrC);
     }
 
     // Write back to global with result
@@ -273,10 +268,6 @@ gemm_simple_no_prefetch(ProblemShape shape_MNK, CtaTiler cta_tiler,
     Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
 
 
-//    Tensor tCsA = thr_mma.partition_A(sA);
-//    Tensor tCsB = thr_mma.partition_B(sB);
-
-
     // Create register tensors for the MMA to operate on
     Tensor tCrA  = thr_mma.partition_fragment_A(sA);                    // (MMA,MMA_M,MMA_K)
     Tensor tCrB  = thr_mma.partition_fragment_B(sB);                    // (MMA,MMA_N,MMA_K)
@@ -322,12 +313,7 @@ gemm_simple_no_prefetch(ProblemShape shape_MNK, CtaTiler cta_tiler,
         cp_async_wait<0>();
         __syncthreads();
 
-
         // Inner loop
-
-        // Could be replaced by this:
-        // gemm(thr_mma, tCsA, tCsB, tCrC);
-
         constexpr int K_BLOCK_MAX = size<2>(tCrA);
         CUTE_UNROLL
         for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
@@ -455,8 +441,6 @@ gemm_simple_no_ldsm(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
 
         // Inner loop
-
-        // Could be replaced by this:
         gemm(thr_mma, tCsA, tCsB, tCrC);
     }
 
