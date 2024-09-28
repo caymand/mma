@@ -193,6 +193,15 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
                                                      int m, int n, int k)
 {
     using namespace cute;
+
+    using TA = half_t;
+    using TB = half_t;
+    using TC = float;
+
+//    TODO: get as argument?
+    auto alpha = Int<1>{};
+    auto beta = Int<0>{};
+
     // Define shapes (dynamic)
     auto M = int(m);
     auto N = int(n);
@@ -204,6 +213,17 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
     auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
 
+
+    // Define mma tiles (static)
+    TiledMMA tiled_mma = make_tiled_mma(
+        MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
+        Layout<Shape<_2,_2,_1>>{},
+        Tile<_32, _32, _16>{}
+    );
+
+
+    //    TODO: try more configs, pipelining, prefetched synchronous copies
+    // Define shared memory layout (static)
     auto bM = Int<128>{};
     auto bN = Int<128>{};
     auto bK = Int<64>{};
@@ -230,13 +250,18 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
     auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK));
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
 
-//    TODO: check why NO_LDSM is better with NO_CPASYNC
-//    TODO: try other versions of memcpy async
+
+    // Define global->shared copy tiling (static)
 #ifdef NO_CPASYNC
-    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
+    using ACopyOpGlobalShared = UniversalCopy<uint128_t>;
+    using BCopyOpGlobalShared = UniversalCopy<uint128_t>;
 #else
-    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
+    // TODO: try other versions of memcpy async
+    using ACopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
+    using BCopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
 #endif
+
+    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<ACopyOpGlobalShared, TA>{},
             Layout<
                     Shape<_16,_8>,
                     Stride<_8,_1>
@@ -244,11 +269,7 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
             Layout<Shape<_1,_8>>{}
     );
 
-#ifdef NO_CPASYNC
-    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<UniversalCopy<uint128_t>, half_t>{},
-#else
-    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
-#endif
+    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<BCopyOpGlobalShared, TB>{},
             Layout<
                     Shape<_16,_8>,
                     Stride<_1,_16>
@@ -256,55 +277,40 @@ long int benchmark_cutlass_mmm_simple<half_t, float>(int n_runs,
             Layout<Shape<_8,_1>>{}
     );
 
-    TiledMMA mmaC = make_tiled_mma(
-            MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
-            Layout<Shape<_2,_2,_1>>{},
-            Tile<_32, _32, _16>{}
-    );
 
-    auto alpha = Int<1>{};
-    auto beta = Int<0>{};
+    // Define shared->register copy tiling (static)
+    using ACopyOpSharedRegisters = SM75_U32x4_LDSM_N;
+    using BCopyOpSharedRegisters = SM75_U16x8_LDSM_T;
 
-#ifdef NO_LDSM
-#define SIMPLE_KERNEL_NAME gemm_simple_no_ldsm
-    print("Using no LDSM kernel\n");
-#else
-#ifdef NO_PREFETCH
-#define SIMPLE_KERNEL_NAME gemm_simple_no_prefetch
-    print("Using no prefetch kernel\n");
-#else
-#define SIMPLE_KERNEL_NAME gemm_simple
-    print("Using prefetch kernel\n");
-#endif
-#endif
+    TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<ACopyOpSharedRegisters, TA>{}, tiled_mma);
+    TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<BCopyOpSharedRegisters, TB>{}, tiled_mma);
 
-    auto kernel = SIMPLE_KERNEL_NAME<
-            SM75_U32x4_LDSM_N, SM75_U16x8_LDSM_T,
+
+    // Define kernel parameters
+    auto kernel = gemm_simple<
             decltype(prob_shape), decltype(cta_tiler),
-            half_t, decltype(dA), decltype(sA), decltype(copyA_global_shared),
-            half_t, decltype(dB), decltype(sB), decltype(copyB_global_shared),
-            float, decltype(dC), decltype(sC), decltype(mmaC),
+            TA, decltype(dA), decltype(sA), decltype(copyA_global_shared), decltype(copyA_shared_registers),
+            TB, decltype(dB), decltype(sB), decltype(copyB_global_shared), decltype(copyB_shared_registers),
+            TC, decltype(dC), decltype(sC), decltype(tiled_mma),
             decltype(alpha), decltype(beta)
     >;
 
-    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(half_t) + cosize_v<decltype(sB)> * sizeof(half_t);
-
+    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB);
     cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_used);
-
-    dim3 dimBlock(size(mmaC));
+    dim3 dimBlock(size(tiled_mma));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
 
-//    TODO: try more configs, pipelining, prefetched synchronous copies
 
+    // Launch kernel
     TimeMeasurement t;
     t.start();
     for (int i = 0; i < n_runs; i++) {
         kernel<<<dimGrid, dimBlock, shared_memory_used>>>(
-                prob_shape, cta_tiler,
-                A, dA, sA, copyA_global_shared,
-                B, dB, sB, copyB_global_shared,
-                C, dC, sC, mmaC,
-                alpha, beta
+            prob_shape,
+            A, dA,
+            B, dB,
+            C, dC,
+            alpha, beta
         );
     }
     cudaDeviceSynchronize();
