@@ -728,18 +728,21 @@ long int benchmark_tiled_mmm(
         int n,
         int k)
 {
-    constexpr int tile_size = 16;
-    constexpr int reg_size = 5;
+    constexpr int Tx = 16;
+    constexpr int Ty = 16;
+    constexpr int Rx = 5;
+    constexpr int Ry = 5;
 
-    int dimy = ceil( ((float) n)/(tile_size * reg_size));
-    int dimx = ceil( ((float) m)/(tile_size * reg_size));
+
+    int dimy = ceil( ((float) n)/(Ty * Ry));
+    int dimx = ceil( ((float) m)/(Tx * Rx));
     TimeMeasurement t;
     dim3 grid(dimx, dimy, 1);
     dim3 block(16, 16, 1);
 
     t.start();
     for (int i = 0; i < n_runs; i++) {
-        matMulTiled<elmT, elmAccT, tile_size, reg_size, tile_size, reg_size, tile_size><<<grid, block>>>(
+        matMulTiled<elmT, elmAccT, float2, Ty, Ry, Tx, Rx, 32><<<grid, block>>>(
                 A_device, B_device, C_device, m, n, k);
     }
     cudaDeviceSynchronize();
@@ -1064,18 +1067,19 @@ int main(int argc, char * argv[])
     A_accT.fill_from(A, m, k);
     B_accT.fill_from(B, k, n);
 
-    benchmark_kernel<acc_type, acc_type, 2, mm_kernel::register_tiled, false>(
-        n_runs, m, n, k, A_accT, B_accT, C_target, C_target, std::string("GPU register tiled")
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, false>(
+        n_runs, m, n, k, A, B, C_target, C_target, std::string("cublas")
+    );
+
+
+    benchmark_kernel<acc_type, acc_type, 2, mm_kernel::register_tiled, true>(
+        n_runs, m, n, k, A_accT, B_accT, C, C_target, std::string("GPU register tiled")
     );
 
     // TODO: make this work for Cutlass half, or cast?
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_naive, true>(
 //        n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor naive")
 //    );
-
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cublas, true>(
-        n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
-    );
 
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
 //            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
@@ -1093,9 +1097,9 @@ int main(int argc, char * argv[])
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
 //    );
 
-    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_simple, true>(
-            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
-    );
+    // benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_simple, true>(
+    //         n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
+    // );
 
 
     cudaFree(A.to_gpu());
