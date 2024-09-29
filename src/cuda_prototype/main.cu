@@ -351,135 +351,138 @@ long int benchmark_cute_mmm(int n_runs, elmT * A, elmT * B, elmAccT * C, int m, 
 
 template<>
 long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, float * C, int m, int n, int k) {
-//    using namespace cute;
-//
-//    using TA = half_t;
-//    using TB = half_t;
-//    using TC = float;
-//
-////    TODO: get as argument?
-//    auto alpha = Int<1>{};
-//    auto beta = Int<0>{};
-//
-//    // Define shapes (dynamic)
-//    auto M = int(m);
-//    auto N = int(n);
-//    auto K = int(k);
-//    auto prob_shape = make_shape(M, N, K);                   // (M, N, K)
-//
-//    // Define strides (mixed)
-//    auto dA = make_stride(K, Int<1>{});                      // (dM, dK)
-//    auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
-//    auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
-//
-//
-//    // Define mma tiles (static)
-//    TiledMMA tiled_mma = make_tiled_mma(
-//            MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
-//    Layout<Shape<_2,_2,_1>>{},
-//    Tile<_32, _32, _16>{}
-//    );
-//
-//
-//    //    TODO: try more configs, pipelining, prefetched synchronous copies
-//    // Define shared memory layout (static)
-//    auto bM = Int<128>{};
-//    auto bN = Int<128>{};
-//    auto bK = Int<64>{};
-//    auto bP = Int<3>{};
-//    auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
-//
-//    auto swizzle_layoutAtom_A =
-//            composition(
-//                    Swizzle<3,3,3>{},
-//                    Layout<
-//                    Shape < _8,_64>,
-//                    Stride<_64, _1>
-//                    >{}
-//            );
-//    auto swizzle_layoutAtom_B =
-//            composition(
-//                    Swizzle<3,3,3>{},
-//                    Layout<
-//                    Shape <_64, _8>,
-//                    Stride< _1,_64>
-//                    >{}
-//            );
-//
-//    auto sA = tile_to_shape(swizzle_layoutAtom_A, make_shape(bM, bK, bP));
-//    auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK, bP));
-//    auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
-//
-//
-//    // Define global->shared copy tiling (static)
-//#ifdef NO_CPASYNC
-//    using ACopyOpGlobalShared = UniversalCopy<uint128_t>;
-//    using BCopyOpGlobalShared = UniversalCopy<uint128_t>;
-//#else
-//    // TODO: try other versions of memcpy async
-//    using ACopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
-//    using BCopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
-//#endif
-//
-//    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<ACopyOpGlobalShared, TA>{},
-//                                                    Layout<
-//                                                    Shape<_16,_8>,
-//                                                    Stride<_8,_1>
-//                                                    >{},
-//    Layout<Shape<_1,_8>>{}
-//    );
-//
-//    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<BCopyOpGlobalShared, TB>{},
-//                                                    Layout<
-//                                                    Shape<_16,_8>,
-//                                                    Stride<_1,_16>
-//                                                    >{},
-//    Layout<Shape<_8,_1>>{}
-//    );
-//
-//
-//    // Define shared->register copy tiling (static)
-//    using ACopyOpSharedRegisters = SM75_U32x4_LDSM_N;
-//    using BCopyOpSharedRegisters = SM75_U16x8_LDSM_T;
-//
-//    TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<ACopyOpSharedRegisters, TA>{}, tiled_mma);
-//    TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<BCopyOpSharedRegisters, TB>{}, tiled_mma);
-//
-//
-//    // Define kernel parameters
-//    auto kernel = gemm_pipelined<
-//            decltype(prob_shape), decltype(cta_tiler),
-//            TA, decltype(dA), decltype(sA), decltype(copyA_global_shared), decltype(copyA_shared_registers),
-//            TB, decltype(dB), decltype(sB), decltype(copyB_global_shared), decltype(copyB_shared_registers),
-//            TC, decltype(dC), decltype(sC), decltype(tiled_mma),
-//            decltype(alpha), decltype(beta),
-//            bP
-//    >;
-//
-//    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB);
-//    cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_used);
-//    dim3 dimBlock(size(tiled_mma));
-//    dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
-//
-//
-//    // Launch kernel
-//    TimeMeasurement t;
-//    t.start();
-//    for (int i = 0; i < n_runs; i++) {
-//        kernel<<<dimGrid, dimBlock, shared_memory_used>>>(
-//                prob_shape,
-//                A, dA,
-//                B, dB,
-//                C, dC,
-//                alpha, beta
-//        );
-//    }
-//    cudaDeviceSynchronize();
-//    t.stop();
-//
-//    // Check if kernel launch was successfull
-//    gpuAssert(cudaPeekAtLastError());
-//    return t.elapsed();
+    using namespace cute;
+
+    using TA = half_t;
+    using TB = half_t;
+    using TC = float;
+
+//    TODO: get as argument?
+    auto alpha = Int<1>{};
+    auto beta = Int<0>{};
+
+    // Define shapes (dynamic)
+    auto M = int(m);
+    auto N = int(n);
+    auto K = int(k);
+    auto prob_shape = make_shape(M, N, K);                   // (M, N, K)
+
+    // Define strides (mixed)
+    auto dA = make_stride(K, Int<1>{});                      // (dM, dK)
+    auto dB = make_stride(Int<1>{}, N);                      // (dN, dK)
+    auto dC = make_stride(N, Int<1>{});                      // (dM, dN)
+
+
+    // Define mma tiles (static)
+    TiledMMA tiled_mma = make_tiled_mma(
+            MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
+    Layout<Shape<_2,_2,_1>>{},
+    Tile<_32, _32, _16>{}
+    );
+
+
+    //    TODO: try more configs
+    // Define shared memory layout (static)
+    auto bM = Int<128>{};
+    auto bN = Int<128>{};
+    auto bK = Int<64>{};
+    auto bP = Int<3>{};
+    auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
+
+    auto swizzle_layoutAtom_A =
+            composition(
+                    Swizzle<3,3,3>{},
+                    Layout<
+                    Shape < _8,_64>,
+                    Stride<_64, _1>
+                    >{}
+            );
+    auto swizzle_layoutAtom_B =
+            composition(
+                    Swizzle<3,3,3>{},
+                    Layout<
+                    Shape <_64, _8>,
+                    Stride< _1,_64>
+                    >{}
+            );
+
+    auto sA = tile_to_shape(swizzle_layoutAtom_A, make_shape(bM, bK, bP));
+    auto sB = tile_to_shape(swizzle_layoutAtom_B, make_shape(bN, bK, bP));
+    auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
+
+
+    // Define global->shared copy tiling (static)
+#ifdef NO_CPASYNC
+    using ACopyOpGlobalShared = UniversalCopy<uint128_t>;
+    using BCopyOpGlobalShared = UniversalCopy<uint128_t>;
+#else
+    // TODO: try other versions of memcpy async
+    using ACopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
+    using BCopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
+#endif
+
+    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<ACopyOpGlobalShared, TA>{},
+                                                    Layout<
+                                                    Shape<_16,_8>,
+                                                    Stride<_8,_1>
+                                                    >{},
+    Layout<Shape<_1,_8>>{}
+    );
+
+    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<BCopyOpGlobalShared, TB>{},
+                                                    Layout<
+                                                    Shape<_16,_8>,
+                                                    Stride<_1,_16>
+                                                    >{},
+    Layout<Shape<_8,_1>>{}
+    );
+
+
+    // Define shared->register copy tiling (static)
+    using ACopyOpSharedRegisters = SM75_U32x4_LDSM_N;
+    using BCopyOpSharedRegisters = SM75_U16x8_LDSM_T;
+
+    TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<ACopyOpSharedRegisters, TA>{}, tiled_mma);
+    TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<BCopyOpSharedRegisters, TB>{}, tiled_mma);
+
+
+    // Define kernel parameters
+    auto kernel = gemm_pipelined<
+            decltype(prob_shape), decltype(cta_tiler),
+            TA, decltype(dA), decltype(sA), decltype(copyA_global_shared), decltype(copyA_shared_registers),
+            TB, decltype(dB), decltype(sB), decltype(copyB_global_shared), decltype(copyB_shared_registers),
+            TC, decltype(dC), decltype(sC), decltype(tiled_mma),
+            decltype(alpha), decltype(beta),
+            bP
+    >;
+
+    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB);
+    cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_used);
+    dim3 dimBlock(size(tiled_mma));
+    dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
+
+
+    printf("Used shared memory: %d, threads: %d\n", shared_memory_used, (int)(size(tiled_mma)));
+
+
+    // Launch kernel
+    TimeMeasurement t;
+    t.start();
+    for (int i = 0; i < n_runs; i++) {
+        kernel<<<dimGrid, dimBlock, shared_memory_used>>>(
+                prob_shape,
+                A, dA,
+                B, dB,
+                C, dC,
+                alpha, beta
+        );
+    }
+    cudaDeviceSynchronize();
+    t.stop();
+
+    // Check if kernel launch was successfull
+    gpuAssert(cudaPeekAtLastError());
+    return t.elapsed();
 }
 
 
@@ -1152,12 +1155,12 @@ int main(int argc, char * argv[])
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass custom")
 //    );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
-//            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
-//    );
-
     benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_simple, true>(
             n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass Simple")
+    );
+
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cute_mm, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("Cute")
     );
 
 
