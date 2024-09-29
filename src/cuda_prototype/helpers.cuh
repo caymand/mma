@@ -7,17 +7,111 @@
 
 #include <cuda_runtime.h>
 #include <cstdarg>
+#include "cute/config.hpp"
+#include "cute/tensor.hpp"
 
 
-// TODO: Remove?
-//CUTLASS_HOST_DEVICE
-//float operator+(half const& lhs, float const& rhs) {
-//    return __half2float(lhs) + rhs;
-//}
-//CUTLASS_HOST_DEVICE
-//float operator+(float const& lhs, half const& rhs) {
-//    return lhs + __half2float(rhs);
-//}
+// TODO: move to helpers?
+// MNK Copy Layout to Latex TIKZ -- 8-value color coded by thread
+template <class LayoutS, class ThrIDS,
+        class LayoutD, class ThrIDD, class PermutationD>
+CUTE_HOST_DEVICE
+void
+// TODO: handle S as well
+print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and  tid -> thr_idx
+                 LayoutD const& D, ThrIDD const& TD, PermutationD permutationD)  // (m,n) -> (tid,vid)  and  tid -> thr_idx
+{
+    using namespace cute;
+
+    CUTE_STATIC_ASSERT_V(rank(S) == Int<2>{});
+    CUTE_STATIC_ASSERT_V(rank(D) == Int<2>{});
+
+    assert(size<0>(S) == size<0>(D));
+    assert(size<1>(S) == size<1>(D));
+
+    char const* latex_header =
+            "\\documentclass{standalone}\n"
+            "\\usepackage{tikz}\n"
+            "\\usetikzlibrary{external}\n"
+            "\\tikzexternalize\n"
+            "\\begin{document}\n"
+            "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},box/.style={rectangle,draw=black,thick,minimum size=1cm,anchor=center}]\n\n";
+    char const* latex_footer =
+            "\\end{tikzpicture}\n"
+            "\\end{document}\n";
+
+    char const* color_map[8] = {"{rgb,255:red,175;green,175;blue,255}",
+                                "{rgb,255:red,175;green,255;blue,175}",
+                                "{rgb,255:red,255;green,255;blue,175}",
+                                "{rgb,255:red,255;green,175;blue,175}",
+                                "{rgb,255:red,210;green,210;blue,255}",
+                                "{rgb,255:red,210;green,255;blue,210}",
+                                "{rgb,255:red,255;green,255;blue,210}",
+                                "{rgb,255:red,255;green,210;blue,210}",};
+
+    // Header
+    printf("%% LayoutS: "); print(S);  printf("\n");
+    printf("%% ThrIDS : "); print(TS); printf("\n");
+    printf("%% LayoutD: "); print(D);  printf("\n");
+    printf("%% ThrIDD : "); print(TD); printf("\n\n");
+
+    printf(latex_header);
+
+    // S starting at 0,0
+    for (int i = 0; i < size<0>(S); ++i) {
+        for (int j = 0; j < size<1>(S); ++j) {
+            int thrid   = S(i,j) % size(TS);
+            int val_idx = S(i,j) / size(TS);
+            int thr_idx = TS(thrid);
+
+            printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+                   color_map[thr_idx % 8],
+                   i, j,
+                   thr_idx, val_idx);
+        }
+    }
+
+// TODO: do using only original function and layout algebra? use tensors?
+// TODO: use cosize of D or permutation D? assert equal?
+// tuple<int, int, int> permuted_D_mem[cosize_v<LayoutD>];
+
+    // D starting at 0,size<1>(S)+3
+    for (int i = 0; i < size<0>(D); ++i) {
+        for (int j = 0; j < size<1>(D); ++j) {
+            int thrid   = D(i,j) % size(TD);
+            int val_idx = D(i,j) / size(TD);
+            int thr_idx = TD(thrid);
+
+            auto permuted_index = permutationD(i, j);
+
+            auto permuted_i = permuted_index / size<1>(D);
+            auto permuted_j = permuted_index % size<1>(D);
+
+            printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+                   color_map[thr_idx % 8],
+                   permuted_i, permuted_j + size<1>(S) + 3,
+                   thr_idx, val_idx);
+        }
+    }
+
+    // S Labels
+    for (int i = 0, j = -1; i < size<0>(S); ++i) {
+        printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, i);
+    }
+    for (int j = 0, i = -1; j < size<1>(S); ++j) {
+        printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, j);
+    }
+    // D Labels
+    for (int i = 0, j = size<1>(D); i < size<0>(S); ++i) {
+        printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j + size<1>(S) + 3, i);
+    }
+    for (int j = 0, i = -1; j < size<1>(D); ++j) {
+        printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j + size<1>(S) + 3, j);
+    }
+
+    // Footer
+    printf(latex_footer);
+}
 
 
 constexpr int float_range = RAND_MAX ;
