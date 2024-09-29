@@ -728,10 +728,11 @@ long int benchmark_tiled_mmm(
         int n,
         int k)
 {
+    // Block size 128x128
     constexpr int Tx = 16;
     constexpr int Ty = 16;
-    constexpr int Rx = 5;
-    constexpr int Ry = 5;
+    constexpr int Rx = 8;
+    constexpr int Ry = 8;
 
 
     int dimy = ceil( ((float) n)/(Ty * Ry));

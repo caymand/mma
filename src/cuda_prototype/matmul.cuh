@@ -22,8 +22,10 @@ __global__ void matMulTiled(ElTp* A, ElTp* B, AccTp* C, int heightA, int widthB,
 
     unsigned int iii = blockIdx.y * Ty * Ry; // Global i index
     unsigned int jjj = blockIdx.x * Tx * Rx; // Global j index
-    // How many elements the vectorized load will load. Should be handled on the host
-    constexpr int load_elms = sizeof(LoadTp) / sizeof(ElTp);    
+    // How many elements the vectorized load will load. Should be handled on the host    
+    constexpr int load_elms = sizeof(LoadTp) / sizeof(ElTp);
+    int blockSize = blockDim.x * blockDim.y;
+    int rows_loaded_B = (blockSize * load_elms) / (Tx * Rx);
 
     // initialize the result with zero
     // (the neutral element for addition)
@@ -62,29 +64,36 @@ __global__ void matMulTiled(ElTp* A, ElTp* B, AccTp* C, int heightA, int widthB,
 	    Asmem_row[local_x] = global_elms;	    	    
 	}
 
-#pragma unroll
-	for (int k = 0; k < load_elms; k++)
-	{	    
-#pragma unroll
-	    for (uint32_t r = 0; r < Rx; r++) {
-		// Use All threads
-		// auto flat_thr_idx = threadIdx.x * threadIdx.y * load_elms;
-		// auto local_j = flat_thr_idx % (Tx * Rx);
-		// auto local_k = flat_thr_idx / (Tx * Rx);
+// #pragma unroll
+// 	for (int k = 0; k < load_elms; k++)
+// 	{	
 	    
-		// auto slice_y = kk + local_k;
-
-		// auto global_thr_offset = slice_y * widthB + jjj;
-		// LoadTp *Bsmem_row = reinterpret_cast<LoadTp *>(Bloc[local_k]);
-		// LoadTp *Bglobal_row = reinterpret_cast<LoadTp *>(B + global_thr_offset);		
-		uint32_t local_y = threadIdx.y + Ty * k;
-		uint32_t local_x = threadIdx.x + Tx*r; 
-		uint32_t slice_y = kk + Ty *k + threadIdx.y;// [kk : kk + Tk]
-		uint32_t slice_x = jjj + local_x; // [jjj : jjj + Tx*Rx]
-		bool insideBounds = (slice_y < widthA) && (slice_x < widthB);
-		Bloc[local_y][local_x] = insideBounds ? B[slice_y * widthB + slice_x] : (ElTp) 0.0;
-	    }
+#pragma unroll
+	for (uint32_t r = 0; r < Rx; r++) {
+	    // Use All threads
+	    // Use 64 threads to do vectorized loads with two elms in j dimension.
+	    // This means we can in each iteration copy a 4x128 block.
+	    // For Rx = 8, this gives a final result of 32x128 (as desired).	    
+	    auto flat_thr_idx = gid;
+	    auto local_j = flat_thr_idx % ((Tx * Rx) / load_elms);
+	    auto local_k = (flat_thr_idx * load_elms) / (Tx * Rx) + r * rows_loaded_B;	 
+	    auto slice_y = kk + local_k;
+	    
+	    auto global_thr_offset = slice_y * widthB + jjj;
+	    LoadTp *Bsmem_row = reinterpret_cast<LoadTp *>(Bloc[local_k]);
+	    LoadTp *Bglobal_row = reinterpret_cast<LoadTp *>(B + global_thr_offset);
+	    // TODO: Bounds check
+	    LoadTp elms = Bglobal_row[local_j];
+	    Bsmem_row[local_j] = elms;
+	    
+	    // uint32_t local_y = threadIdx.y + Ty * k;
+	    // uint32_t local_x = threadIdx.x + Tx*r; 
+	    // uint32_t slice_y = kk + Ty *k + threadIdx.y;// [kk : kk + Tk]
+	    // uint32_t slice_x = jjj + local_x; // [jjj : jjj + Tx*Rx]
+	    // bool insideBounds = (slice_y < widthA) && (slice_x < widthB);
+	    // Bloc[local_y][local_x] = insideBounds ? B[slice_y * widthB + slice_x] : (ElTp) 0.0;
 	}
+	// }
 	
 	__syncthreads();
 
