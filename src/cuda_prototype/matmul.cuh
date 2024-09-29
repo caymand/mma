@@ -9,7 +9,7 @@ template <class ElTp, class AccTp, class LoadTp, int Ty, int Ry, int Tx, int Rx,
 __global__ void matMulTiled(ElTp* A, ElTp* B, AccTp* C, int heightA, int widthB, int widthA) {
     int gid = threadIdx.x + threadIdx.y * blockDim.x;
     if (gid >= widthA * heightA || gid >= widthA * widthB) { return; }
-    // TODO: Padding
+    // TODO: Padding - problematic due to alignment issues caused by padding
     // remapping (a slice of) A to shared memory
     __shared__ ElTp Aloc[Ty*Ry][Tk]; // TODO: Padding
 
@@ -63,10 +63,6 @@ __global__ void matMulTiled(ElTp* A, ElTp* B, AccTp* C, int heightA, int widthB,
 	    }
 	    Asmem_row[local_x] = global_elms;	    	    
 	}
-
-// #pragma unroll
-// 	for (int k = 0; k < load_elms; k++)
-// 	{	
 	    
 #pragma unroll
 	for (uint32_t r = 0; r < Rx; r++) {
@@ -84,17 +80,8 @@ __global__ void matMulTiled(ElTp* A, ElTp* B, AccTp* C, int heightA, int widthB,
 	    LoadTp *Bglobal_row = reinterpret_cast<LoadTp *>(B + global_thr_offset);
 	    // TODO: Bounds check
 	    LoadTp elms = Bglobal_row[local_j];
-	    Bsmem_row[local_j] = elms;
-	    
-	    // uint32_t local_y = threadIdx.y + Ty * k;
-	    // uint32_t local_x = threadIdx.x + Tx*r; 
-	    // uint32_t slice_y = kk + Ty *k + threadIdx.y;// [kk : kk + Tk]
-	    // uint32_t slice_x = jjj + local_x; // [jjj : jjj + Tx*Rx]
-	    // bool insideBounds = (slice_y < widthA) && (slice_x < widthB);
-	    // Bloc[local_y][local_x] = insideBounds ? B[slice_y * widthB + slice_x] : (ElTp) 0.0;
+	    Bsmem_row[local_j] = elms;	            
 	}
-	// }
-	
 	__syncthreads();
 
 	// compute the per-thread result css:

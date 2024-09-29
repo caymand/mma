@@ -734,6 +734,7 @@ long int benchmark_tiled_mmm(
     constexpr int Rx = 8;
     constexpr int Ry = 8;
 
+    // NOTE: The kernel now assumes the vectorized loads fit with the block size
 
     int dimy = ceil( ((float) n)/(Ty * Ry));
     int dimx = ceil( ((float) m)/(Tx * Rx));
