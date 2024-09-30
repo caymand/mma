@@ -20,9 +20,6 @@
 #define LOAD_TYPE float4
 #endif
 
-#ifndef NUM_STAGES
-#define NUM_STAGES 2
-#endif
 
 #ifdef SYNC_CPY
 #define USE_PIPELINE

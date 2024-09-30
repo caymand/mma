@@ -33,6 +33,10 @@
 #define SHARED_PADDING 8
 #endif
 
+#ifndef NUM_STAGES
+#define NUM_STAGES 2
+#endif
+
 typedef cutlass::half_t half_t;
 
 
@@ -386,7 +390,7 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
     auto bM = Int<128>{};
     auto bN = Int<128>{};
     auto bK = Int<64>{};
-    auto bP = Int<3>{};
+    auto bP = Int<NUM_STAGES>{};
     auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
 
     auto swizzle_layoutAtom_A =
@@ -412,14 +416,9 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 
 
     // Define global->shared copy tiling (static)
-#ifdef NO_CPASYNC
-    using ACopyOpGlobalShared = UniversalCopy<uint128_t>;
-    using BCopyOpGlobalShared = UniversalCopy<uint128_t>;
-#else
     // TODO: try other versions of memcpy async
     using ACopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
     using BCopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
-#endif
 
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<ACopyOpGlobalShared, TA>{},
                                                     Layout<
@@ -445,6 +444,8 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
     TiledCopy copyA_shared_registers = make_tiled_copy_A(Copy_Atom<ACopyOpSharedRegisters, TA>{}, tiled_mma);
     TiledCopy copyB_shared_registers = make_tiled_copy_B(Copy_Atom<BCopyOpSharedRegisters, TB>{}, tiled_mma);
 
+//    TODO: handle better, or fix?
+    static_assert(NUM_STAGES > 1, "NUM_STAGES must be > 1");
 
     // Define kernel parameters
     auto kernel = gemm_pipelined<
@@ -453,7 +454,7 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
             TB, decltype(dB), decltype(sB), decltype(copyB_global_shared), decltype(copyB_shared_registers),
             TC, decltype(dC), decltype(sC), decltype(tiled_mma),
             decltype(alpha), decltype(beta),
-            bP
+            NUM_STAGES
     >;
 
     const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB);
