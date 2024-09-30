@@ -132,14 +132,7 @@ gemm_pipelined(ProblemShape shape_MNK,
     CUTE_STATIC_ASSERT_V(  shape(tCrC) ==   shape(tCgC));                // (MMA,MMA_M,MMA_N)
 #endif
 
-#ifdef NO_LDSM
-    Tensor tCsA = thr_mma.partition_A(sA);
-    Tensor tCsB = thr_mma.partition_B(sB);
 
-    CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCsA));                // MMA_M
-    CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCsB));                // MMA_N
-    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                // MMA_K
-#else
     // Create register tensors for the MMA to operate on
     Tensor tCrA  = thr_mma.partition_fragment_A(sA(_,_,0));                    // (MMA,MMA_M,MMA_K)
     Tensor tCrB  = thr_mma.partition_fragment_B(sB(_,_,0));                    // (MMA,MMA_N,MMA_K)
@@ -161,7 +154,6 @@ gemm_pipelined(ProblemShape shape_MNK,
     CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCrA));                // MMA_M
     CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCrB));                // MMA_N
     CUTE_STATIC_ASSERT_V(size<2>(tCrA) == size<2>(tCrB));                // MMA_K
-#endif
 
     // Clear the accumulators
     clear(tCrC);
