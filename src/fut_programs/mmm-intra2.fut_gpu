@@ -48,12 +48,10 @@ entry("main",
 	for i_6205:i64 < 1i64 do {
  -- Copy A to shared	    
 	  let {smem_A_10125 : [16i64][16i64]f32} = segmap(inblock; )
-    (gtid_16192 < 16i64, gtid_16193 < 16i64) (~phys_tid_16194) : {[16i64][16i64]f32} {
+    (gtid_16192 < 16i64, gtid_16193 < 16i64) (~phys_tid_16194) : {f32} {
     	    let {elm_101240 : f32} = A_scratch_10123[gtid_16192, gtid_16193]
 	    let {copy_res_10126 : f32} = apply copy_global_shared_12345(*elm_101240) : {*f32}
 	    return {returns copy_res_10126}
-	    -- return {blkreg_tile(16i64 / (1i64 * 1i64), 16i64 / (1i64 * 1i64)) copy_res_10126}
-	    -- return {A_scratch_10123 with ([gtid_16193, gtid_16193] = copy_res_10126)}
 	  }
  -- Copy B to shared	      
 	  let {smem_B_10127 : [16i64][16i64]f32} = segmap(inblock; )

@@ -1,0 +1,165 @@
+types {
+  
+}
+
+
+
+fun
+  gemm_123456 (A_mem_0 : mem@device,
+               B_mem_1 : mem@device,
+               A_101230 : [16i64][16i64]f32 @ A_mem_0 ->
+                          {offset: 0i64;
+                           strides: [16i64, 1i64];
+                           shape: [16i64, 16i64]},
+               B_101231 : [16i64][16i64]f32 @ B_mem_1 ->
+                          {offset: 0i64;
+                           strides: [16i64, 1i64];
+                           shape: [16i64, 16i64]},
+               C_101232 : f32)
+  : {f32} = {
+  {C_101232}
+}
+
+fun
+  copy_global_shared_12345 (smem_2312312 : f32)
+  : {f32} = {
+  {smem_2312312}
+}
+
+entry("main",
+      {A: [][][]f32,
+       B: [][][]f32},
+      {[][][]f32})
+  entry_main (A_mem_0 : mem@device,
+              B_mem_1 : mem@device,
+              k₀_5783 : i64,
+              A_5784 : [k₀_5783][16i64][16i64]f32 @ A_mem_0 ->
+                       {offset: 0i64;
+                        strides: [256i64, 16i64, 1i64];
+                        shape: [k₀_5783, 16i64, 16i64]},
+              B_5785 : [k₀_5783][16i64][16i64]f32 @ B_mem_1 ->
+                       {offset: 0i64;
+                        strides: [256i64, 16i64, 1i64];
+                        shape: [k₀_5783, 16i64, 16i64]})
+  : {mem@device,
+     [k₀_5783][16i64][16i64]f32 @ ?0@device ->
+     {offset: 0i64;
+      strides: [256i64, 16i64, 1i64];
+      shape: [k₀_5783, 16i64, 16i64]}#([3, 4], [1])} = {
+  let {bytes_40 : i64} =
+    mul_nw64(1024i64, k₀_5783)
+  let {mem_41 : mem@device} =
+    #[incremental_flattening(only_intra)]
+    alloc(bytes_40, @device)
+  let {defunc_0_map_res_6184 : [k₀_5783][16i64][16i64]f32 @ mem_41 ->
+                               {offset: 0i64;
+                                strides: [256i64, 16i64, 1i64];
+                                shape: [k₀_5783, 16i64, 16i64]}} =
+    #[incremental_flattening(only_intra)]
+    segmap(block; ; grid=k₀_5783; blocksize=256i64)
+    (gtid_6185 < k₀_5783) (~phys_tblock_id_6186) : {[16i64][16i64]f32} {
+      let {color_78 : mem@shared} =
+        alloc(1024i64, @shared)
+      let {color_79 : mem@shared} =
+        alloc(1024i64, @shared)
+      let {color_80 : mem@shared} =
+        alloc(1024i64, @shared)
+      let {mem_3 : mem@shared} =
+        color_79
+      let {A_init_1231231 : [16i64][16i64]f32 @ mem_3 ->
+                            {offset: 0i64;
+                             strides: [16i64, 1i64];
+                             shape: [16i64, 16i64]}} =
+        scratch(f32, 16i64, 16i64)
+      let {mem_4 : mem@shared} =
+        color_78
+      let {B_init_1231232 : [16i64][16i64]f32 @ mem_4 ->
+                            {offset: 0i64;
+                             strides: [16i64, 1i64];
+                             shape: [16i64, 16i64]}} =
+        scratch(f32, 16i64, 16i64)
+      let {mem_10 : mem@f32} =
+        alloc(4i64, @f32)
+      let {c_registers_101251 : [16i64][16i64]f32 @ mem_10 ->
+                                {offset: 0i64;
+                                 strides: [0i64, 0i64];
+                                 shape: [16i64, 16i64]}} =
+        segmap(inblock; )
+        (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
+          
+          return {returns (private) 0.0f32}
+        }
+      let {mem_49 : mem@shared} =
+        color_80
+      let {smem_A_50 : [16i64][16i64]f32 @ mem_49 ->
+                       {offset: 0i64;
+                        strides: [16i64, 1i64];
+                        shape: [16i64, 16i64]}} =
+        segmap(inblock; )
+        (gtid_51 < 16i64, gtid_52 < 16i64) (~phys_tid_53) : {f32} {
+          let {elm_54 : f32} =
+            A_init_1231231[gtid_51, gtid_52]
+          let {copy_res_55 : f32} =
+            apply copy_global_shared_12345(*elm_54)
+            : {f32}
+          return {returns copy_res_55}
+        }
+      let {mem_56 : mem@shared} =
+        color_79
+      let {smem_B_57 : [16i64][16i64]f32 @ mem_56 ->
+                       {offset: 0i64;
+                        strides: [16i64, 1i64];
+                        shape: [16i64, 16i64]}} =
+        segmap(inblock; )
+        (gtid_58 < 16i64, gtid_59 < 16i64) (~phys_tid_60) : {f32} {
+          let {elm_61 : f32} =
+            B_init_1231232[gtid_58, gtid_59]
+          let {copy_res_62 : f32} =
+            apply copy_global_shared_12345(*elm_61)
+            : {f32}
+          return {returns copy_res_62}
+        }
+      let {mem_63 : mem@shared} =
+        color_78
+      let {final_res_64 : [16i64][16i64]f32 @ mem_63 ->
+                          {offset: 0i64;
+                           strides: [16i64, 1i64];
+                           shape: [16i64, 16i64]}} =
+        segmap(inblock; )
+        (gtid_65 < 16i64, gtid_66 < 16i64) (~phys_tid_67) : {f32} {
+          let {color_76 : mem@device} =
+            alloc(1024i64, @device)
+          let {color_77 : mem@device} =
+            alloc(1024i64, @device)
+          let {elm_68 : f32} =
+            c_registers_101251[gtid_65, gtid_66]
+          let {mem_69 : mem@device} =
+            color_77
+          let {smem_A_desired_form_70 : [16i64][16i64]f32 @ mem_69 ->
+                                        {offset: 0i64;
+                                         strides: [16i64, 1i64];
+                                         shape: [16i64, 16i64]}} =
+            manifest((0, 1), smem_A_50)
+          let {mem_71 : mem@device} =
+            color_76
+          let {smem_B_desired_form_72 : [16i64][16i64]f32 @ mem_71 ->
+                                        {offset: 0i64;
+                                         strides: [16i64, 1i64];
+                                         shape: [16i64, 16i64]}} =
+            manifest((0, 1), smem_B_57)
+          let {gemm_res_73 : f32} =
+            apply gemm_123456(mem_69, mem_71, smem_A_desired_form_70, smem_B_desired_form_72, *elm_68)
+            : {f32}
+          return {returns gemm_res_73}
+        }
+      let {mem_74 : mem@f32} =
+        alloc(1024i64, @f32)
+      let {final_res_scalcopy_75 : [16i64][16i64]f32 @ mem_74 ->
+                                   {offset: 0i64;
+                                    strides: [0i64, 0i64];
+                                    shape: [16i64, 16i64]}} =
+        copy(final_res_64)
+      return {returns final_res_scalcopy_75}
+    }
+  in {mem_41, defunc_0_map_res_6184}
+}
