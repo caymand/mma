@@ -1,0 +1,41 @@
+types {
+  
+}
+
+
+
+entry("main",
+      {A: [][][]f32,
+       B: [][][]f32},
+      {[][][]f32})
+  entry_main (q₀_5783 : i64,
+              A_5784 : [q₀_5783][16i64][16i64]f32,
+              B_5785 : [q₀_5783][16i64][16i64]f32)
+  : {[q₀_5783][16i64][16i64]f32#([1, 2], [0])} = {
+  let {defunc_0_map_res_6184 : [q₀_5783][16i64][16i64]f32} =
+    #[incremental_flattening(only_intra)]
+    segmap(block; ; grid=q₀_5783; blocksize=256i64)
+    (gtid_6185 < q₀_5783) (~phys_tblock_id_6186) : {[16i64][16i64]f32} {
+      let {defunc_0_map_res_6191 : [16i64][16i64]f32} =
+        segmap(inblock; )
+        (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
+          let {defunc_0_f_res_6197 : f32} =
+            #[sequential]
+            loop {redout_6204 : f32} = {0.0f32}
+            for i_6205:i64 < 16i64 do {
+              let {eta_p_6201 : f32} =
+                A_5784[gtid_6185, gtid_6192, i_6205]
+              let {eta_p_6202 : f32} =
+                B_5785[gtid_6185, i_6205, gtid_6193]
+              let {defunc_0_f_res_6203 : f32} =
+                fmul32(eta_p_6201, eta_p_6202)
+              let {defunc_0_op_res_6200 : f32} =
+                fadd32(defunc_0_f_res_6203, redout_6204)
+              in {defunc_0_op_res_6200}
+            }
+          return {returns defunc_0_f_res_6197}
+        }
+      return {returns defunc_0_map_res_6191}
+    }
+  in {defunc_0_map_res_6184}
+}
