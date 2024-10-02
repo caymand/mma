@@ -1,0 +1,58 @@
+types {
+  
+}
+
+fun gemm_123456 (A_101230 : [16i64][16i64]f32, B_101231: [16i64][16i64]f32, C_101232: *[16i64][16i64]f32) : {*[16i64][16i64]f32} = {
+  {C_101232}
+}
+
+fun
+  copy_global_shared_12345 (k_32712839 : i64, i_28382372 : i64, gmem_2312312 : [k_32712839][16i64][16i64]f32)  		
+  : { [16i64][16i64]f32} = {
+  let { test_312289982 : [16i64][16i64]f32} = gmem_2312312[i_28382372, 0i64 :+ 16i64 * 16i64, 0i64 :+ 16i64 * 1i64]
+  let { test_3287236498573 : [16i64][16i64]f32} = copy(test_312289982)
+   in {test_3287236498573}
+}
+
+
+entry("main",
+      {A: [][][]f32,
+       B: [][][]f32},
+      {[][][]f32})
+  entry_main (k₀_5783 : i64,
+              A_5784 : [k₀_5783][16i64][16i64]f32,
+              B_5785 : [k₀_5783][16i64][16i64]f32)
+  : {[k₀_5783][16i64][16i64]f32#([1, 2], [0])} = {
+  let {defunc_0_map_res_6184 : [k₀_5783][16i64][16i64]f32} =
+    #[incremental_flattening(only_intra)]
+    segmap(block; ; grid=k₀_5783; blocksize=256i64)
+    (gtid_6185 < k₀_5783) (~phys_tblock_id_6186) : {[16i64][16i64]f32} {
+-- Zero Initialize C
+      let {c_registers_101251 : [16i64][16i64]f32} =
+        segmap(inblock; )
+        (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {f32} {
+	  return {returns (private) 0.0f32}
+      }
+
+-- Sequential K loop
+      let {defunc_0_f_res_6197 : [16i64][16i64]f32,
+      	   A_unused_928123 : [16i64][16i64]f32,
+	   B_unused_9213123 : [16i64][16i64]f32} =
+	#[sequential]
+	loop {c_accum_123123 : *[16i64][16i64]f32
+	} = {c_registers_101251}
+	for i_6205:i64 < k₀_5783 do {
+ -- Copy A to shared
+ --     let {A_092348023 : [16i64][16i64]f32} = A_5784[i_6205, 0i64 :+ 16i64 * 16i64, 0i64 :+ 16i64 * 1i64]
+	  let {smem_A_10125 : [16i64][16i64]f32} = apply copy_global_shared_12345(k₀_5783, i_6205, A_5784) : {[16i64][16i64]f32}
+ -- Copy B to shared
+ --     let {B_0923480232 : [16i64][16i64]f32} = B_5785[i_6205, 0i64 :+ 16i64 * 16i64, 0i64 :+ 16i64 * 1i64]
+	  let {smem_B_10127 : [16i64][16i64]f32} = apply copy_global_shared_12345(k₀_5783, i_6205, B_5785) : {[16i64][16i64]f32}
+
+	  let {final_res_10129 : [16i64][16i64]f32} = apply gemm_123456(smem_A_10125, smem_B_10127, c_accum_123123) : {*[16i64][16i64]f32}
+	in {final_res_10129}
+      }
+    return {returns defunc_0_f_res_6197} 
+  }
+  in {defunc_0_map_res_6184}
+}
