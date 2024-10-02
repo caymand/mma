@@ -1,0 +1,232 @@
+types {
+  
+}
+Constants:
+  
+
+Initialisation:
+  skip
+Function copy_global_shared_12345:
+  Inputs:
+    mem@device smem_mem_0
+  Outputs:
+    f32 prim_out_0
+  Entry:
+    
+  Body:
+    var ret_1231231231: f32
+    ret_1231231231 <- smem_mem_0<f32@device>[0i64]
+    prim_out_0 <- ret_1231231231
+
+Function entry_main:
+  Inputs:
+    mem@device A_mem_0
+    mem@device B_mem_1
+    i64 k₀_5783
+  Outputs:
+    mem@device mem_out_0
+  Entry:
+    Name:
+      "main"
+    Arguments:
+      A : [k₀_5783][16i64][16i64]f32 at A_mem_0@device 
+      B : [k₀_5783][16i64][16i64]f32 at B_mem_1@device 
+    Results:
+      [k₀_5783][16i64][16i64]f32 at mem_out_0@device 
+  Body:
+    var bytes_63: i64
+    bytes_63 <- mul_nw64 (1024i64) (k₀_5783)
+    var mem_64: mem@device
+    mem_64 <- malloc(bytes_63)@device
+    var total_size_123: i64
+    total_size_123 <- mul_nw64 (262144i64) (k₀_5783)
+    var color_114: mem@device
+    color_114 <- malloc(total_size_123)@device
+    var total_size_125: i64
+    total_size_125 <- mul_nw64 (262144i64) (k₀_5783)
+    var color_115: mem@device
+    color_115 <- malloc(total_size_125)@device
+    var total_size_127: i64
+    total_size_127 <- mul_nw64 (262144i64) (k₀_5783)
+    var color_116: mem@device
+    color_116 <- malloc(total_size_127)@device
+    var total_size_129: i64
+    total_size_129 <- mul_nw64 (262144i64) (k₀_5783)
+    var color_117: mem@device
+    color_117 <- malloc(total_size_129)@device
+    debug ("\n# SegMap")
+    var num_chunks_1: i32
+    num_chunks_1 <- 1i32
+    var virt_num_tblocks_2: i32
+    virt_num_tblocks_2 <- sext_i64_i32 (k₀_5783)
+    kernel  {
+      blocks  {
+        [k₀_5783]
+      }
+      tblock_size  {
+        [const 256i64]
+      }
+      uses  {
+        scalar_copy(k₀_5783, i64)
+        mem_copy(mem_64)
+        mem_copy(color_114)
+        mem_copy(color_115)
+        mem_copy(color_116)
+        mem_copy(color_117)
+      }
+      failure_tolerant  {
+        False
+      }
+      check_shared_memory  {
+        True
+      }
+      body  {
+        var local_tid_4: i32
+        var tblock_size_7: i32
+        var wave_size_6: i32
+        var block_id_5: i32
+        local_tid_4 <- get_local_id(0)
+        tblock_size_7 <- get_local_size(0)
+        wave_size_6 <- get_lockstep_width()
+        block_id_5 <- get_tblock_id(0)
+        var global_tid_3: i32
+        global_tid_3 <- add_nw32 (mul_nw32 (block_id_5) (tblock_size_7)) (local_tid_4)
+        var phys_tblock_id_6186: i64
+        phys_tblock_id_6186 <- sext_i32_i64 (block_id_5)
+        var slice_10: i64
+        slice_10 <- 16i64
+        var slice_11: i64
+        slice_11 <- mul_nw64 (16i64) (slice_10)
+        var ltid_pre_8: i64
+        ltid_pre_8 <- squot64 (sext_i32_i64 (local_tid_4)) (slice_10)
+        var remnant_12: i64
+        remnant_12 <- sub_nw64 (sext_i32_i64 (local_tid_4)) (mul_nw64 (ltid_pre_8) (slice_10))
+        var ltid_pre_9: i64
+        ltid_pre_9 <- remnant_12
+        var remnant_13: i64
+        remnant_13 <- sub_nw64 (remnant_12) (ltid_pre_9)
+        var slice_14: i64
+        slice_14 <- k₀_5783
+        var gtid_6185: i64
+        gtid_6185 <- sext_i32_i64 (block_id_5)
+        var remnant_15: i64
+        remnant_15 <- sub_nw64 (sext_i32_i64 (block_id_5)) (gtid_6185)
+        var color_118: mem@shared
+        color_118 = shared_alloc(1024i64)
+        var color_119: mem@shared
+        color_119 = shared_alloc(1024i64)
+        var color_120: mem@shared
+        color_120 = shared_alloc(1024i64)
+        var mem_18: mem@[1i64]f32
+        var phys_tid_6194: i64
+        phys_tid_6194 <- sext_i32_i64 (local_tid_4)
+        var gtid_6192: i64
+        gtid_6192 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_8))
+        var gtid_6193: i64
+        gtid_6193 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_9))
+        if logand (slt64 (gtid_6192) (16i64)) (slt64 (gtid_6193) (16i64)) then {
+          var mem_9: mem@[1i64]f32
+          for nest_i_16 < 1i64 {
+            mem_9<f32@[1i64]f32>[nest_i_16] <- 0.0f32
+          }
+          lmadcopy_1d_f32([1i64],
+                          mem_18@[1i64]f32+0i64 [1i64],
+                          mem_9@[1i64]f32+0i64 [1i64])
+        } else {
+          skip
+        }
+        error_sync_local()
+        var phys_tid_76: i64
+        phys_tid_76 <- sext_i32_i64 (local_tid_4)
+        var gtid_74: i64
+        gtid_74 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_8))
+        var gtid_75: i64
+        gtid_75 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_9))
+        if logand (slt64 (gtid_74) (16i64)) (slt64 (gtid_75) (16i64)) then {
+          lmadcopy_2d_f32([16i64][16i64],
+                          color_114@global+add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_76) [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64)][mul_nw64 (k₀_5783) (256i64)],
+                          color_118@shared+0i64 [16i64][1i64])
+          var copy_res_79: f32
+          call copy_res_79 <- copy_global_shared_12345(color_114)
+          color_119<f32@shared>[add_nw64 (mul_nw64 (gtid_74) (16i64)) (gtid_75)] <- copy_res_79
+        } else {
+          skip
+        }
+        error_sync_local()
+        var phys_tid_84: i64
+        phys_tid_84 <- sext_i32_i64 (local_tid_4)
+        var gtid_82: i64
+        gtid_82 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_8))
+        var gtid_83: i64
+        gtid_83 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_9))
+        if logand (slt64 (gtid_82) (16i64)) (slt64 (gtid_83) (16i64)) then {
+          lmadcopy_2d_f32([16i64][16i64],
+                          color_115@global+add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_84) [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64)][mul_nw64 (k₀_5783) (256i64)],
+                          color_120@shared+0i64 [16i64][1i64])
+          var copy_res_87: f32
+          call copy_res_87 <- copy_global_shared_12345(color_115)
+          color_118<f32@shared>[add_nw64 (mul_nw64 (gtid_82) (16i64)) (gtid_83)] <- copy_res_87
+        } else {
+          skip
+        }
+        error_sync_local()
+        free(color_120)@shared
+        var mem_96: mem@[1i64]f32
+        var phys_tid_100: i64
+        phys_tid_100 <- sext_i32_i64 (local_tid_4)
+        var gtid_98: i64
+        gtid_98 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_8))
+        var gtid_99: i64
+        gtid_99 <- sext_i32_i64 (sext_i64_i32 (ltid_pre_9))
+        if logand (slt64 (gtid_98) (16i64)) (slt64 (gtid_99) (16i64)) then {
+          var elm_107: f32
+          elm_107 <- mem_18<f32@[1i64]f32>[0i64]
+          lmadcopy_2d_f32([16i64][16i64],
+                          color_117@global+add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_100) [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64)][mul_nw64 (k₀_5783) (256i64)],
+                          color_119@shared+0i64 [16i64][1i64])
+          lmadcopy_2d_f32([16i64][16i64],
+                          color_116@global+add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_100) [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64)][mul_nw64 (k₀_5783) (256i64)],
+                          color_118@shared+0i64 [16i64][1i64])
+          var gemm_res_112: f32
+          call gemm_res_112 <- gemm_123456(color_117, color_116, elm_107)
+          var mem_105: mem@[1i64]f32
+          for nest_i_17 < 1i64 {
+            mem_105<f32@[1i64]f32>[nest_i_17] <- gemm_res_112
+          }
+          lmadcopy_1d_f32([1i64],
+                          mem_96@[1i64]f32+0i64 [1i64],
+                          mem_105@[1i64]f32+0i64 [1i64])
+        } else {
+          skip
+        }
+        error_sync_local()
+        free(mem_18)@[1i64]f32
+        free(color_118)@shared
+        free(color_119)@shared
+        if eq_i32 (local_tid_4) (0i32) then {
+          lmadcopy_2d_f32([16i64][16i64],
+                          mem_64@global+mul_nw64 (gtid_6185) (256i64) [16i64][1i64],
+                          mem_96@[1i64]f32+0i64 [0i64][0i64])
+        } else {
+          skip
+        }
+      }
+    }
+    debug ("")
+    free(color_114)@device
+    free(color_115)@device
+    free(color_116)@device
+    free(color_117)@device
+    mem_out_0 <- mem_64 @@device
+
+Function gemm_123456:
+  Inputs:
+    mem@device A_mem_0
+    mem@device B_mem_1
+    f32 C_101232
+  Outputs:
+    f32 prim_out_0
+  Entry:
+    
+  Body:
+    prim_out_0 <- C_101232

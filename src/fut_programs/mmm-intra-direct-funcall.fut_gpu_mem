@@ -59,20 +59,22 @@ entry("main",
     alloc(bytes_63, @device)
   let {total_size_123 : i64} =
     mul_nw64(262144i64, k₀_5783)
-  let {color_114 : mem@device} =
+-- ###### Device memory allocations
+  let {color_114 : mem@device} = -- A shared to device for copy
     alloc(total_size_123, @device)
   let {total_size_125 : i64} =
     mul_nw64(262144i64, k₀_5783)
-  let {color_115 : mem@device} =
+  let {color_115 : mem@device} = -- Bshared to device for copy
     alloc(total_size_125, @device)
   let {total_size_127 : i64} =
     mul_nw64(262144i64, k₀_5783)
-  let {color_116 : mem@device} =
+  let {color_116 : mem@device} = -- A shared to device for gemm
     alloc(total_size_127, @device)
   let {total_size_129 : i64} =
     mul_nw64(262144i64, k₀_5783)
-  let {color_117 : mem@device} =
+  let {color_117 : mem@device} = -- B shared to device for gemm
     alloc(total_size_129, @device)
+-- ####### allocations done
   let {defunc_0_map_res_6184 : [k₀_5783][16i64][16i64]f32 @ mem_64 ->
                                {offset: 0i64;
                                 strides: [256i64, 16i64, 1i64];
@@ -80,11 +82,11 @@ entry("main",
     #[incremental_flattening(only_intra)]
     segmap(block; ; grid=k₀_5783; blocksize=256i64)
     (gtid_6185 < k₀_5783) (~phys_tblock_id_6186) : {[16i64][16i64]f32} {
-      let {color_118 : mem@shared} =
+      let {color_118 : mem@shared} = -- B smem and A init
         alloc(1024i64, @shared)
-      let {color_119 : mem@shared} =
+      let {color_119 : mem@shared} = -- A smem
         alloc(1024i64, @shared)
-      let {color_120 : mem@shared} =
+      let {color_120 : mem@shared} = -- B init
         alloc(1024i64, @shared)
       let {A_init_1231231 : [16i64][16i64]f32 @ color_118 ->
                             {offset: 0i64;
