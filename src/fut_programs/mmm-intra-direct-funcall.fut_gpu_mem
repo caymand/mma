@@ -1,0 +1,188 @@
+types {
+  
+}
+
+
+
+fun
+  gemm_123456 (A_mem_0 : mem@device,
+               B_mem_1 : mem@device,
+               A_101230 : [16i64][16i64]f32 @ A_mem_0 ->
+                          {offset: 0i64;
+                           strides: [16i64, 1i64];
+                           shape: [16i64, 16i64]},
+               B_101231 : [16i64][16i64]f32 @ B_mem_1 ->
+                          {offset: 0i64;
+                           strides: [16i64, 1i64];
+                           shape: [16i64, 16i64]},
+               C_101232 : f32)
+  : {f32} = {
+  {C_101232}
+}
+
+fun
+  copy_global_shared_12345 (smem_mem_0 : mem@device,
+                            smem_2312312 : *[16i64][16i64]f32 @ smem_mem_0 ->
+                                           {offset: 0i64;
+                                            strides: [16i64, 1i64];
+                                            shape: [16i64, 16i64]})
+  : {f32} = {
+  let {ret_1231231231 : f32} =
+    smem_2312312[0i64, 0i64]
+  in {ret_1231231231}
+}
+
+entry("main",
+      {A: [][][]f32,
+       B: [][][]f32},
+      {[][][]f32})
+  entry_main (A_mem_0 : mem@device,
+              B_mem_1 : mem@device,
+              k₀_5783 : i64,
+              A_5784 : [k₀_5783][16i64][16i64]f32 @ A_mem_0 ->
+                       {offset: 0i64;
+                        strides: [256i64, 16i64, 1i64];
+                        shape: [k₀_5783, 16i64, 16i64]},
+              B_5785 : [k₀_5783][16i64][16i64]f32 @ B_mem_1 ->
+                       {offset: 0i64;
+                        strides: [256i64, 16i64, 1i64];
+                        shape: [k₀_5783, 16i64, 16i64]})
+  : {mem@device,
+     [k₀_5783][16i64][16i64]f32 @ ?0@device ->
+     {offset: 0i64;
+      strides: [256i64, 16i64, 1i64];
+      shape: [k₀_5783, 16i64, 16i64]}#([3, 4], [1])} = {
+  let {bytes_63 : i64} =
+    mul_nw64(1024i64, k₀_5783)
+  let {mem_64 : mem@device} =
+    #[incremental_flattening(only_intra)]
+    alloc(bytes_63, @device)
+  let {total_size_123 : i64} =
+    mul_nw64(262144i64, k₀_5783)
+  let {color_114 : mem@device} =
+    alloc(total_size_123, @device)
+  let {total_size_125 : i64} =
+    mul_nw64(262144i64, k₀_5783)
+  let {color_115 : mem@device} =
+    alloc(total_size_125, @device)
+  let {total_size_127 : i64} =
+    mul_nw64(262144i64, k₀_5783)
+  let {color_116 : mem@device} =
+    alloc(total_size_127, @device)
+  let {total_size_129 : i64} =
+    mul_nw64(262144i64, k₀_5783)
+  let {color_117 : mem@device} =
+    alloc(total_size_129, @device)
+  let {defunc_0_map_res_6184 : [k₀_5783][16i64][16i64]f32 @ mem_64 ->
+                               {offset: 0i64;
+                                strides: [256i64, 16i64, 1i64];
+                                shape: [k₀_5783, 16i64, 16i64]}} =
+    #[incremental_flattening(only_intra)]
+    segmap(block; ; grid=k₀_5783; blocksize=256i64)
+    (gtid_6185 < k₀_5783) (~phys_tblock_id_6186) : {[16i64][16i64]f32} {
+      let {color_118 : mem@shared} =
+        alloc(1024i64, @shared)
+      let {color_119 : mem@shared} =
+        alloc(1024i64, @shared)
+      let {color_120 : mem@shared} =
+        alloc(1024i64, @shared)
+      let {A_init_1231231 : [16i64][16i64]f32 @ color_118 ->
+                            {offset: 0i64;
+                             strides: [16i64, 1i64];
+                             shape: [16i64, 16i64]}} =
+        scratch(f32, 16i64, 16i64)
+      let {B_init_1231232 : [16i64][16i64]f32 @ color_120 ->
+                            {offset: 0i64;
+                             strides: [16i64, 1i64];
+                             shape: [16i64, 16i64]}} =
+        scratch(f32, 16i64, 16i64)
+      let {mem_18 : mem@[1i64]f32} =
+        alloc(4i64, @[1i64]f32)
+      let {c_registers_101251 : [16i64][16i64][1i64]f32 @ mem_18 ->
+                                {offset: 0i64;
+                                 strides: [0i64, 0i64, 1i64];
+                                 shape: [16i64, 16i64, 1i64]}} =
+        segmap(inblock; )
+        (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {[1i64]f32} {
+          let {mem_9 : mem@[1i64]f32} =
+            alloc(4i64, @[1i64]f32)
+          let {ret_213978 : [1i64]f32 @ mem_9 ->
+                            {offset: 0i64;
+                             strides: [1i64];
+                             shape: [1i64]}} =
+            replicate([1i64], 0.0f32)
+          return {returns (private) ret_213978}
+        }
+      let {smem_A_73 : [16i64][16i64]f32 @ color_119 ->
+                       {offset: 0i64;
+                        strides: [16i64, 1i64];
+                        shape: [16i64, 16i64]}} =
+        segmap(inblock; )
+        (gtid_74 < 16i64, gtid_75 < 16i64) (~phys_tid_76) : {f32} {
+          let {A_scratch_desired_form_78 : [16i64][16i64]f32 @ color_114 ->
+                                           {offset: add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_76);
+                                            strides: [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64), mul_nw64 (k₀_5783) (256i64)];
+                                            shape: [16i64, 16i64]}} =
+            manifest((0, 1), A_init_1231231)
+          let {copy_res_79 : f32} =
+            apply copy_global_shared_12345(color_114, *A_scratch_desired_form_78)
+            : {f32}
+          return {returns copy_res_79}
+        }
+      let {smem_B_81 : [16i64][16i64]f32 @ color_118 ->
+                       {offset: 0i64;
+                        strides: [16i64, 1i64];
+                        shape: [16i64, 16i64]}} =
+        segmap(inblock; )
+        (gtid_82 < 16i64, gtid_83 < 16i64) (~phys_tid_84) : {f32} {
+          let {B_scratch_desired_form_86 : [16i64][16i64]f32 @ color_115 ->
+                                           {offset: add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_84);
+                                            strides: [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64), mul_nw64 (k₀_5783) (256i64)];
+                                            shape: [16i64, 16i64]}} =
+            manifest((0, 1), B_init_1231232)
+          let {copy_res_87 : f32} =
+            apply copy_global_shared_12345(color_115, *B_scratch_desired_form_86)
+            : {f32}
+          return {returns copy_res_87}
+        }
+      let {mem_96 : mem@[1i64]f32} =
+        alloc(4i64, @[1i64]f32)
+      let {final_res_97 : [16i64][16i64][1i64]f32 @ mem_96 ->
+                          {offset: 0i64;
+                           strides: [0i64, 0i64, 1i64];
+                           shape: [16i64, 16i64, 1i64]}} =
+        segmap(inblock; )
+        (gtid_98 < 16i64, gtid_99 < 16i64) (~phys_tid_100) : {[1i64]f32} {
+          let {elm_107 : f32} =
+            c_registers_101251[gtid_98, gtid_99, 0i64]
+          let {smem_A_desired_form_109 : [16i64][16i64]f32 @ color_117 ->
+                                         {offset: add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_100);
+                                          strides: [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64), mul_nw64 (k₀_5783) (256i64)];
+                                          shape: [16i64, 16i64]}} =
+            manifest((0, 1), smem_A_73)
+          let {smem_B_desired_form_111 : [16i64][16i64]f32 @ color_116 ->
+                                         {offset: add_nw64 (mul_nw64 (phys_tblock_id_6186) (256i64)) (phys_tid_100);
+                                          strides: [mul_nw64 (mul_nw64 (k₀_5783) (256i64)) (16i64), mul_nw64 (k₀_5783) (256i64)];
+                                          shape: [16i64, 16i64]}} =
+            manifest((0, 1), smem_B_81)
+          let {gemm_res_112 : f32} =
+            apply gemm_123456(color_117, color_116, smem_A_desired_form_109, smem_B_desired_form_111, *elm_107)
+            : {f32}
+          let {mem_105 : mem@[1i64]f32} =
+            alloc(4i64, @[1i64]f32)
+          let {ret_113 : [1i64]f32 @ mem_105 ->
+                         {offset: 0i64;
+                          strides: [1i64];
+                          shape: [1i64]}} =
+            replicate([1i64], gemm_res_112)
+          return {returns (private) ret_113}
+        }
+      let {defunc_0_f_res_611197 : [16i64][16i64]f32 @ mem_96 ->
+                                   {offset: 0i64;
+                                    strides: [0i64, 0i64];
+                                    shape: [16i64, 16i64]}} =
+        final_res_97[0i64 :+ 16i64 * 16i64, 0i64 :+ 16i64 * 1i64, 0i64]
+      return {returns defunc_0_f_res_611197}
+    }
+  in {mem_64, defunc_0_map_res_6184}
+}
