@@ -158,11 +158,14 @@ __forceinline__ __device__ void copy_global_to_shared_swizzled(elmType * shared,
         core_matrix_row_y_in_tile = core_matrix_row_y_in_tile / 2 + (core_matrix_row_y_in_tile % 2) * (load_tile_height / 2);
 
         #ifdef SWIZZLE
-        unsigned int core_matrix_row_y_in_tile_swizzled = core_matrix_row_x_in_tile;
+//        unsigned int core_matrix_row_y_in_tile_swizzled = core_matrix_row_x_in_tile;
+        unsigned int core_matrix_row_y_in_tile_swizzled = core_matrix_row_y_in_tile;
         unsigned int core_matrix_row_x_in_tile_swizzled = core_matrix_row_y_in_tile ^ core_matrix_row_x_in_tile;
 
-        unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_height * core_matrix_width_elms + core_matrix_row_x_in_tile_swizzled * core_matrix_width_elms;
-        unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_width_core_matrix_rows + core_matrix_row_y_in_tile_swizzled;
+//        unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_height * core_matrix_width_elms + core_matrix_row_x_in_tile_swizzled * core_matrix_width_elms;
+//        unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_width_core_matrix_rows + core_matrix_row_y_in_tile_swizzled;
+        unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_width_elms + core_matrix_row_x_in_tile_swizzled * core_matrix_width_elms;
+        unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_height + core_matrix_row_y_in_tile_swizzled;
         #else
         unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_width_elms + core_matrix_row_x_in_tile * core_matrix_width_elms;
         unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_height + core_matrix_row_y_in_tile;
@@ -238,11 +241,14 @@ __forceinline__ __device__ void load_frags(unsigned int warpQuarter, unsigned in
     unsigned int core_matrix_row_y_in_tile = warpIDInQuarter;
 
     #ifdef SWIZZLE
-    unsigned int core_matrix_row_y_in_tile_swizzled = core_matrix_row_x_in_tile;
-    unsigned int core_matrix_row_x_in_tile_swizzled = core_matrix_row_y_in_tile ^ core_matrix_row_y_in_tile_swizzled;
+//        unsigned int core_matrix_row_y_in_tile_swizzled = core_matrix_row_x_in_tile;
+    unsigned int core_matrix_row_y_in_tile_swizzled = core_matrix_row_y_in_tile;
+    unsigned int core_matrix_row_x_in_tile_swizzled = core_matrix_row_y_in_tile ^ core_matrix_row_x_in_tile;
 
-    unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_height * core_matrix_width_elms + core_matrix_row_x_in_tile_swizzled * core_matrix_width_elms;
-    unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_width_core_matrix_rows + core_matrix_row_y_in_tile_swizzled;
+//        unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_height * core_matrix_width_elms + core_matrix_row_x_in_tile_swizzled * core_matrix_width_elms;
+//        unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_width_core_matrix_rows + core_matrix_row_y_in_tile_swizzled;
+    unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_width_elms + core_matrix_row_x_in_tile_swizzled * core_matrix_width_elms;
+    unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_height + core_matrix_row_y_in_tile_swizzled;
     #else
     unsigned int core_matrix_row_shared_offset_x = load_tile_x * load_tile_width_elms + core_matrix_row_x_in_tile * core_matrix_width_elms;
     unsigned int core_matrix_row_shared_offset_y = load_tile_y * load_tile_height + core_matrix_row_y_in_tile;

@@ -37,6 +37,41 @@
 #define NUM_STAGES 2
 #endif
 
+// Set constants using compiler options
+#ifndef WMMA_M
+#define WMMA_M 16
+#endif
+#ifndef WMMA_N
+#define WMMA_N 16
+#endif
+#ifndef WMMA_K
+#define WMMA_K 16
+#endif
+#ifndef FRAGS_M
+#define FRAGS_M 4
+#endif
+#ifndef FRAGS_N
+#define FRAGS_N 4
+#endif
+#ifndef FRAGS_K
+#define FRAGS_K 1
+#endif
+#ifndef WARP_TILES_M
+#define WARP_TILES_M 1
+#endif
+#ifndef WARP_TILES_N
+#define WARP_TILES_N 1
+#endif
+#ifndef WARP_TILES_K
+#define WARP_TILES_K 4
+#endif
+#ifndef BLOCK_TILES_M
+#define BLOCK_TILES_M 2
+#endif
+#ifndef BLOCK_TILES_N
+#define BLOCK_TILES_N 2
+#endif
+
 typedef cutlass::half_t half_t;
 
 
@@ -62,77 +97,20 @@ long int benchmark_optimized_tensor_mmm(
         int n,
         int k)
 {
-// Set constants using compiler options
-#ifdef WMMA_M
-    constexpr int wmma_m = WMMA_M;
-#else
-    constexpr int wmma_m = 16;
-#endif
-#ifdef WMMA_N
-    constexpr int wmma_n = WMMA_N;
-#else
-    constexpr int wmma_n = 16;
-#endif
-#ifdef WMMA_K
-    constexpr int wmma_k = WMMA_K;
-#else
-    constexpr int wmma_k = 16;
-#endif
-#ifdef FRAGS_M
-    constexpr int frags_m = FRAGS_M;
-#else
-    constexpr int frags_m = 2;
-#endif
-#ifdef FRAGS_N
-    constexpr int frags_n = FRAGS_N;
-#else
-    constexpr int frags_n = 2;
-#endif
-#ifdef FRAGS_K
-    constexpr int frags_k = FRAGS_K;
-#else
-    constexpr int frags_k = 1;
-#endif
-#ifdef WARP_TILES_M
-    constexpr int warp_tiles_m = WARP_TILES_M;
-#else
-    constexpr int warp_tiles_m = 1;
-#endif
-#ifdef WARP_TILES_N
-    constexpr int warp_tiles_n = WARP_TILES_N;
-#else
-    constexpr int warp_tiles_n = 1;
-#endif
-#ifdef WARP_TILES_K
-    constexpr int warp_tiles_k = WARP_TILES_K;
-#else
-    constexpr int warp_tiles_k = 4;
-#endif
-#ifdef BLOCK_TILES_M
-    constexpr int block_tiles_m = BLOCK_TILES_M;
-#else
-    constexpr int block_tiles_m = 2;
-#endif
-#ifdef BLOCK_TILES_N
-    constexpr int block_tiles_n = BLOCK_TILES_N;
-#else
-    constexpr int block_tiles_n = 2;
-#endif
-
-    constexpr unsigned int threads_per_block = block_tiles_m * block_tiles_n * WARP_SIZE;
+    constexpr unsigned int threads_per_block = BLOCK_TILES_M * BLOCK_TILES_N * WARP_SIZE;
     printf("    Threads used: %d/%d\n", threads_per_block, MAX_THREADS_PER_BLOCK);
     assert(threads_per_block <= MAX_THREADS_PER_BLOCK);
     // Assumes num_warps >= block_tiles_m * block_tiles_n, i.e. all block tiles are handled by a warp
-    assert(threads_per_block / WARP_SIZE >= block_tiles_m * block_tiles_n);
+    assert(threads_per_block / WARP_SIZE >= BLOCK_TILES_M * BLOCK_TILES_N);
 
-    printf("    Using wmma %d x %d x %d\n", wmma_m, wmma_n, wmma_k);
-    printf("    Using frags %d x %d x %d\n", frags_m, frags_n, frags_k);
-    printf("    Using warp tiles %d x %d x %d\n", warp_tiles_m, warp_tiles_n, warp_tiles_k);
-    printf("    Using block tiles %d x %d\n", block_tiles_m, block_tiles_n);
+    printf("    Using wmma %d x %d x %d\n", WMMA_M, WMMA_N, WMMA_K);
+    printf("    Using frags %d x %d x %d\n", FRAGS_M, FRAGS_N, FRAGS_K);
+    printf("    Using warp tiles %d x %d x %d\n", WARP_TILES_M, WARP_TILES_N, WARP_TILES_K);
+    printf("    Using block tiles %d x %d\n", BLOCK_TILES_M, BLOCK_TILES_N);
 
-    constexpr unsigned int shared_m = wmma_m * frags_m * warp_tiles_m * block_tiles_m;
-    constexpr unsigned int shared_n = wmma_n * frags_n * warp_tiles_n * block_tiles_n;
-    constexpr unsigned int shared_k = wmma_k * frags_k * warp_tiles_k;
+    constexpr unsigned int shared_m = WMMA_M * FRAGS_M * WARP_TILES_M * BLOCK_TILES_M;
+    constexpr unsigned int shared_n = WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N;
+    constexpr unsigned int shared_k = WMMA_K * FRAGS_K * WARP_TILES_K;
 
     int dimx = ceil(((float) n)/(shared_n));
     int dimy = ceil(((float) m)/(shared_m));
@@ -147,14 +125,12 @@ long int benchmark_optimized_tensor_mmm(
     int max_shared_memory;
     cudaDeviceGetAttribute(&max_shared_memory, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
 
-    constexpr unsigned int num_stages = NUM_STAGES;
-
     #ifdef SWIZZLE
     constexpr unsigned int shared_memory_used_A = shared_m * shared_k * sizeof(elmT) * num_stages;
     constexpr unsigned int shared_memory_used_B = shared_k * shared_n * sizeof(elmT) * num_stages;
     #else
-    constexpr unsigned int shared_memory_used_A = shared_m * (shared_k + SHARED_PADDING) * sizeof(elmT) * num_stages;
-    constexpr unsigned int shared_memory_used_B = shared_k * (shared_n + SHARED_PADDING) * sizeof(elmT) * num_stages;
+    constexpr unsigned int shared_memory_used_A = shared_m * (shared_k + SHARED_PADDING) * sizeof(elmT) * NUM_STAGES;
+    constexpr unsigned int shared_memory_used_B = shared_k * (shared_n + SHARED_PADDING) * sizeof(elmT) * NUM_STAGES;
     #endif
 
     constexpr unsigned int shared_memory_used = shared_memory_used_A + shared_memory_used_B;
@@ -163,7 +139,7 @@ long int benchmark_optimized_tensor_mmm(
     printf("    Shared memory used A: %d/%d bytes (%.0f%%)\n", shared_memory_used_A, max_shared_memory, (float) shared_memory_used_A / max_shared_memory * 100);
     printf("    Shared memory used B: %d/%d bytes (%.0f%%)\n", shared_memory_used_B, max_shared_memory, (float) shared_memory_used_B / max_shared_memory * 100);
 
-    auto kernel = matMulTiledTensor<elmT, elmAccT, wmma_m, wmma_n, wmma_k, frags_m, frags_n, frags_k, warp_tiles_m, warp_tiles_n, warp_tiles_k, block_tiles_m, block_tiles_n, threads_per_block, num_stages>;
+    auto kernel = matMulTiledTensor<elmT, elmAccT, WMMA_M, WMMA_N, WMMA_K, FRAGS_M, FRAGS_N, FRAGS_K, WARP_TILES_M, WARP_TILES_N, WARP_TILES_K, BLOCK_TILES_M, BLOCK_TILES_N, threads_per_block, NUM_STAGES>;
 
     cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_used);
 //    cudaFuncSetAttribute(kernel, cudaFuncAttributePreferredSharedMemoryCarveout, 100);
@@ -379,24 +355,29 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 
     // Define mma tiles (static)
     TiledMMA tiled_mma = make_tiled_mma(
-            MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
-    Layout<Shape<_2,_2,_1>>{},
-    Tile<_32, _32, _16>{}
+        MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>{},
+        Layout<Shape<Int<BLOCK_TILES_M>,Int<BLOCK_TILES_N>,_1>>{},
+        Tile<Int<BLOCK_TILES_M * WMMA_M>, Int<BLOCK_TILES_N * WMMA_N>, Int<WMMA_K>>{}
     );
 
 
-    //    TODO: try more configs
+    //    TODO: smarter way to calculate config from compiler defs
     // Define shared memory layout (static)
-    auto bM = Int<128>{};
-    auto bN = Int<128>{};
-    auto bK = Int<64>{};
+    auto bM = Int<WMMA_M * FRAGS_M * WARP_TILES_M * BLOCK_TILES_M>{};
+    auto bN = Int<WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N>{};
+    auto bK = Int<WMMA_K * FRAGS_K * WARP_TILES_K>{};
     auto bP = Int<NUM_STAGES>{};
     auto cta_tiler = make_shape(bM, bN, bK);                 // (BLK_M, BLK_N, BLK_K)
+
+    using SharedM = decltype(bM);
+    using SharedN = decltype(bN);
+    using SharedK = decltype(bK);
 
     auto swizzle_layoutAtom_A =
             composition(
                     Swizzle<3,3,3>{},
                     Layout<
+//                            TODO: use min of shared_k and 64 instead of 64?
                     Shape < _8,_64>,
                     Stride<_64, _1>
                     >{}
@@ -405,6 +386,7 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
             composition(
                     Swizzle<3,3,3>{},
                     Layout<
+//                            TODO: use min of shared_n and 64 instead of 64?
                     Shape <_64, _8>,
                     Stride< _1,_64>
                     >{}
@@ -421,19 +403,19 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
     using BCopyOpGlobalShared = SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>;
 
     TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<ACopyOpGlobalShared, TA>{},
-                                                    Layout<
-                                                    Shape<_16,_8>,
-                                                    Stride<_8,_1>
-                                                    >{},
-    Layout<Shape<_1,_8>>{}
+        Layout<
+            Shape<Int<BLOCK_TILES_M * BLOCK_TILES_N * WARP_SIZE / (WMMA_K * FRAGS_K * WARP_TILES_K / 8)>, Int<WMMA_K * FRAGS_K * WARP_TILES_K / 8>>,
+            Stride<Int<WMMA_K * FRAGS_K * WARP_TILES_K / 8>,_1>
+        >{},
+        Layout<Shape<_1,_8>>{}
     );
 
     TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<BCopyOpGlobalShared, TB>{},
-                                                    Layout<
-                                                    Shape<_16,_8>,
-                                                    Stride<_1,_16>
-                                                    >{},
-    Layout<Shape<_8,_1>>{}
+        Layout<
+            Shape<Int<WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N / 8>, Int<BLOCK_TILES_M * BLOCK_TILES_N * WARP_SIZE / (WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N / 8)>>,
+            Stride<_1, Int<WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N / 8>>
+        >{},
+        Layout<Shape<_8,_1>>{}
     );
 
 
@@ -1144,9 +1126,9 @@ int main(int argc, char * argv[])
         n_runs, m, n, k, A, B, C, C_target, std::string("cublas")
     );
 
-//    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
-//            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
-//    );
+    benchmark_kernel<element_type, acc_type, 2, mm_kernel::tensor_optimized, true>(
+            n_runs, m, n, k, A, B, C, C_target, std::string("GPU tensor optimized")
+    );
 
 //    benchmark_kernel<element_type, acc_type, 2, mm_kernel::cutlass_default, true>(
 //            n_runs, m, n, k, A, B, C, C_target, std::string("Cutlass default")
