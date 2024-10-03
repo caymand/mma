@@ -1,0 +1,76 @@
+types {
+  
+}
+
+
+-- Try similar copy function consuming registers
+-- Could then actually consume shared, or split in 2 and do copy global -> registers, then registers -> shared
+fun gemm_123456 (A_101230 : [16i64][16i64]f32, B_101231: [16i64][16i64]f32, C_101232: *[1i64]f32) : {*[1i64]f32} = {
+  {C_101232}
+}
+
+entry("main",
+      {A: [][][]f32,
+       B: [][][]f32},
+      {[][][]f32})
+  entry_main (k₀_5783 : i64,
+              A_5784 : [k₀_5783][16i64][16i64]f32,
+              B_5785 : [k₀_5783][16i64][16i64]f32)
+  : {[k₀_5783][16i64][16i64]f32#([1, 2], [0])} = {
+  let {defunc_0_map_res_6184 : [k₀_5783][16i64][16i64]f32} =
+    #[incremental_flattening(only_intra)]
+    segmap(block; ; grid=k₀_5783; blocksize=256i64)
+    (gtid_6185 < k₀_5783) (~phys_tblock_id_6186) : {[16i64][16i64]f32} {
+      let {A_init_1231231 : [16i64][16i64]f32} =
+        scratch(f32, 16i64, 16i64)
+      let {B_init_1231232 : [16i64][16i64]f32} =
+        scratch(f32, 16i64, 16i64)
+-- Zero Initialize C
+      let {c_registers_101251 : [16i64][16i64][1i64]f32} =
+        segmap(inblock; )
+        (gtid_6192 < 16i64, gtid_6193 < 16i64) (~phys_tid_6194) : {[1i64]f32} {
+        -- TODO: avoid scratch
+          let {css_1231768 : [1i64]f32} = scratch(f32, 1i64)
+          let {ret_213978 : [1i64]f32} = css_1231768 with [0i64] = 0.0f32
+	      return {returns (private) ret_213978}
+      }
+
+-- Sequential K loop
+      let {defunc_0_f_res_6197 : [16i64][16i64][1i64]f32,
+      	   A_unused_928123 : [16i64][16i64]f32,
+	   B_unused_9213123 : [16i64][16i64]f32} =
+	#[sequential]
+	loop {c_accum_123123 : *[16i64][16i64][1i64]f32,
+	      A_scratch_10123 : *[16i64][16i64]f32,
+	      B_scratch_10124 : *[16i64][16i64]f32
+	} = {c_registers_101251, A_init_1231231, B_init_1231232}
+	for i_6205:i64 < k₀_5783 do {
+	
+ -- Copy A to shared TODO: avoid with and hust di like C instead?
+	  let {smem_A_10125 : [16i64][16i64]f32} = #[copyA] segmap(inblock; )
+    (gtid_16192 < 16i64, gtid_16193 < 16i64) (~phys_tid_16194) : {[16i64][16i64]f32} {
+        let {elm_101240 : f32} = A_5784[i_6205, gtid_16192, gtid_16193]
+	    return {A_scratch_10123 with ([gtid_16192, gtid_16193] = elm_101240)}
+	  }
+ -- Copy B to shared
+
+	  let {smem_B_10127 : [16i64][16i64]f32} = #[copyB] segmap(inblock; )
+    (gtid_26192 < 16i64, gtid_26193 < 16i64) (~phys_tid_26194) : {[16i64][16i64]f32} {
+        let {elm_101241 : f32} = B_5785[i_6205, gtid_26192, gtid_26193]
+	    return {B_scratch_10124 with ([gtid_26192, gtid_26193] = elm_101241)}
+	  }
+
+	  let {final_res_10129 : [16i64][16i64][1i64]f32} = #[mmaC] segmap(inblock; )
+    (gtid_36192 < 16i64, gtid_36193 < 16i64) (~phys_tid_36194) : {[1i64]f32} {
+    -- TODO: avoid scratch
+	    let {elm_101244 : [1i64]f32} = c_accum_123123[gtid_36192, gtid_36193, 0i64 :+ 1i64 * 1i64]
+	    let {elm_1012444 : [1i64]f32} = apply gemm_123456(smem_A_10125, smem_B_10127, *elm_101244) : {*[1i64]f32}
+        return {returns (private) elm_1012444}
+	  }	      
+	in {final_res_10129, smem_A_10125, smem_B_10127}
+      }
+    let {defunc_0_f_res_611197 : [16i64][16i64]f32} = defunc_0_f_res_6197[0i64 :+ 16i64 * 16i64, 0i64 :+ 16i64 * 1i64, 0i64]
+    return {returns defunc_0_f_res_611197} 
+  }
+  in {defunc_0_map_res_6184}
+}
