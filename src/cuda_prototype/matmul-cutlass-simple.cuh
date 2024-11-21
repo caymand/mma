@@ -61,6 +61,8 @@ gemm_simple(ProblemShape shape_MNK,
 
     ASmemLayout sA_layout;
     BSmemLayout sB_layout;
+//    TODO: remove?
+    CSmemLayout sC_layout;
 
     CtaTiler cta_tiler;
 
@@ -109,6 +111,43 @@ gemm_simple(ProblemShape shape_MNK,
     Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
     Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
 
+    //    TODO: remove?
+    auto smemC = reinterpret_cast<TC *>(smemB + cosize_v<BSmemLayout>);
+    Tensor sC = make_tensor(make_smem_ptr(smemC), sC_layout);
+
+#ifdef SWIZZLE_BUF
+    auto smemC2 = reinterpret_cast<TC *>(smemC + cosize_v<CSmemLayout>);
+    Tensor sC2 = make_tensor(make_smem_ptr(smemC2), make_layout(Shape<_64, _64>{}, LayoutRight{}));
+
+    TiledCopy copyC2 = make_tiled_copy(
+            Copy_Atom<UniversalCopy<uint128_t>, TC>{},
+            Layout<
+            Shape<_16, _8>,
+            Stride<_8, _1>
+            >{},
+    Layout<Shape<_1, _4>>{}
+    );
+    ThrCopy thr_copy_C2 = copyC2.get_slice(threadIdx.x);
+    Tensor tCsC_copy2 = thr_copy_C2.partition_S(sC);
+    Tensor tCsC2 = thr_copy_C2.partition_D(sC2);
+#endif
+
+    TiledCopy copyC = make_tiled_copy(
+            Copy_Atom<UniversalCopy<uint128_t>, TC>{},
+            Layout<
+            Shape<_16, _8>,
+            Stride<_8, _1>
+            >{},
+    Layout<Shape<_1, _4>>{}
+    );
+    ThrCopy thr_copy_C = copyC.get_slice(threadIdx.x);
+#ifdef SWIZZLE_BUF
+    Tensor tCsC_copy = thr_copy_C.partition_S(sC2);
+#else
+    Tensor tCsC_copy = thr_copy_C.partition_S(sC);
+#endif
+    Tensor tCgC = thr_copy_C.partition_D(gC);
+
 
 //    TODO: use collective copy?
     ThrCopy thr_copy_a_global_shared = copyA_global_shared.get_slice(threadIdx.x);
@@ -120,15 +159,18 @@ gemm_simple(ProblemShape shape_MNK,
     Tensor tBsB = thr_copy_b_global_shared.partition_D(sB);                            // (CPY,CPY_N,CPY_K)
 
     ThrMMA thr_mma = tiled_mma.get_slice(threadIdx.x);
-    Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
-    Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
+//    TODO: revert?
+    Tensor tCsC = thr_mma.partition_C(sC);
+    Tensor tCrC = thr_mma.make_fragment_C(tCsC);
+//    Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
+//    Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
 
 #if 1
     CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tAsA));                // CPY_M
     CUTE_STATIC_ASSERT_V(size<2>(tAgA) == size<2>(tAsA));                // CPY_K
     CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBsB));                // CPY_N
     CUTE_STATIC_ASSERT_V(size<2>(tBgB) == size<2>(tBsB));                // CPY_K
-    CUTE_STATIC_ASSERT_V(  shape(tCrC) ==   shape(tCgC));                // (MMA,MMA_M,MMA_N)
+//    CUTE_STATIC_ASSERT_V(  shape(tCrC) ==   shape(tCgC));                // (MMA,MMA_M,MMA_N)
 #endif
 
     // Create register tensors for the MMA to operate on
@@ -149,8 +191,8 @@ gemm_simple(ProblemShape shape_MNK,
     CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<1>(tCrB_copy_view));            // CPY_N
     CUTE_STATIC_ASSERT_V(size<2>(tCsB) == size<2>(tCrB_copy_view));            // CPY_K
 
-    CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCrA));                // MMA_M
-    CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCrB));                // MMA_N
+//    CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCrA));                // MMA_M
+//    CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCrB));                // MMA_N
     CUTE_STATIC_ASSERT_V(size<2>(tCrA) == size<2>(tCrB));                // MMA_K
 
     // Clear the accumulators
@@ -182,8 +224,22 @@ gemm_simple(ProblemShape shape_MNK,
             // GEMM on k_block in registers
             gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
         }
+
+        copy(tCrC, tCsC);
+
+#ifdef SWIZZLE_BUF
+        __syncthreads();
+        copy(copyC2, tCsC_copy2, tCsC2);
+#endif
     }
 
     // Write back to global with result
-    axpby(alpha, tCrC, beta, tCgC);
+//    TODO: revert?
+//    axpby(alpha, tCrC, beta, tCgC);
+//    axpby(alpha, tCrC, beta, tCsC);
+//    copy(tCrC, tCsC);
+
+    __syncthreads();
+
+    copy(copyC, tCsC_copy, tCgC);
 }

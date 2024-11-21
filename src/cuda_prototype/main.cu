@@ -435,10 +435,15 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 #endif
 #endif
 
+#ifdef SWIZZLE_BUF
+    auto sC = composition(Swizzle<3,2>{}, make_layout(make_shape(bM, bN), LayoutRight{}));
+#else
     auto sC = make_layout(make_shape(bM, bN), LayoutRight{});
+#endif
 
     // Define global->shared copy tiling (static)
-    TiledCopy copyA_global_shared = make_tiled_copy(Copy_Atom<ACopyOpGlobalShared, TA>{},
+    TiledCopy copyA_global_shared = make_tiled_copy(
+        Copy_Atom<ACopyOpGlobalShared, TA>{},
         Layout<
             Shape<Int<BLOCK_TILES_M * BLOCK_TILES_N * WARP_SIZE / (WMMA_K * FRAGS_K * WARP_TILES_K / elms_per_load)>, Int<WMMA_K * FRAGS_K * WARP_TILES_K / elms_per_load>>,
             Stride<Int<WMMA_K * FRAGS_K * WARP_TILES_K / elms_per_load>,_1>
@@ -446,7 +451,8 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
         Layout<Shape<_1,Int<elms_per_load>>>{}
     );
 
-    TiledCopy copyB_global_shared = make_tiled_copy(Copy_Atom<BCopyOpGlobalShared, TB>{},
+    TiledCopy copyB_global_shared = make_tiled_copy(
+        Copy_Atom<BCopyOpGlobalShared, TB>{},
         Layout<
             Shape<Int<WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N / elms_per_load>, Int<BLOCK_TILES_M * BLOCK_TILES_N * WARP_SIZE / (WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N / elms_per_load)>>,
             Stride<_1, Int<WMMA_N * FRAGS_N * WARP_TILES_N * BLOCK_TILES_N / elms_per_load>>
@@ -498,7 +504,13 @@ long int benchmark_cute_mmm<half_t, float>(int n_runs, half_t * A, half_t * B, f
 #endif
 #endif
 
-    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB);
+//    TODO: revert?
+//    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB);
+#ifdef SWIZZLE_BUF
+    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB) + cosize_v<decltype(sC)> * sizeof(TC) * 2;
+#else
+    const uint32_t shared_memory_used = cosize_v<decltype(sA)> * sizeof(TA) + cosize_v<decltype(sB)> * sizeof(TB) + cosize_v<decltype(sC)> * sizeof(TC);
+#endif
     cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_used);
     dim3 dimBlock(size(tiled_mma));
     dim3 dimGrid(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
